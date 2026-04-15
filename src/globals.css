@@ -1,0 +1,105 @@
+/* ═══ Box sizing fix ═══ */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+/* ═══ Cleo Yards — Global Hover Animations ═══ */
+
+/* Stat / Summary cards — lift on hover */
+.cy-card-hover {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.cy-card-hover:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 4px 12px rgba(15,26,20,0.08), 0 2px 4px rgba(15,26,20,0.04);
+}
+
+/* Table rows — slide right + green accent bar */
+.cy-row-hover {
+  transition: all 0.18s ease;
+}
+.cy-row-hover:hover {
+  background: rgba(22,163,74,0.08);
+  transform: translateX(4px);
+  box-shadow: inset 3px 0 0 #16A34A;
+}
+
+/* Filter / tag buttons — subtle scale */
+.cy-tag-hover {
+  transition: all 0.15s ease;
+}
+.cy-tag-hover:hover {
+  transform: scale(1.05);
+}
+
+/* Action buttons — subtle lift */
+.cy-btn-hover {
+  transition: all 0.15s ease;
+}
+.cy-btn-hover:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(15,26,20,0.1);
+}
+
+/* Sidebar nav items — slide right */
+.cy-nav-hover {
+  transition: all 0.15s ease;
+}
+.cy-nav-hover:hover {
+  transform: translateX(3px);
+}
+
+/* Clickable list items — subtle background glow */
+.cy-list-hover {
+  transition: all 0.15s ease;
+}
+.cy-list-hover:hover {
+  background: rgba(22,163,74,0.06);
+}
+
+/* ═══ App Portal Typography (scoped) ═══ */
+[data-app-portal] h1,
+[data-app-portal] h2,
+[data-app-portal] h3,
+[data-app-portal] h4 {
+  font-family: 'Outfit', 'DM Sans', sans-serif;
+}
+
+/* ═══ App Portal Typography (forced) ═══ */
+[data-app-portal] * {
+  font-family: 'DM Sans', 'Inter', system-ui, sans-serif !important;
+}
+[data-app-portal] h1,
+[data-app-portal] h2,
+[data-app-portal] h3,
+[data-app-portal] h4 {
+  font-family: 'Outfit', 'DM Sans', sans-serif !important;
+}
+
+/* ═══ Print styles — hide sidebar, full width invoice ═══ */
+@media print {
+  aside, nav, [data-app-portal] > aside {
+    display: none !important;
+  }
+  main {
+    margin: 0 !important;
+    padding: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+  [data-app-portal] {
+    display: block !important;
+  }
+  button, [data-app-portal] > div:first-child {
+    display: none !important;
+  }
+  /* Hide action buttons, menu, sidebar cards */
+  .cy-no-print {
+    display: none !important;
+  }
+  /* Make the invoice content full width */
+  body {
+    margin: 0;
+    padding: 0;
+  }
+}
