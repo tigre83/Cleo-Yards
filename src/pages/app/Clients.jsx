@@ -60,12 +60,14 @@ export default function Clients({ dark, v, t, lang }) {
   const [search, setSearch] = useState("");
   const [view, setView] = useState("list");
   const [toast, setToast] = useState(null);
+  const [crewDrop, setCrewDrop] = useState(false);
+  const crewRef = useRef(null);
   const [editId, setEditId] = useState(null);
   const [payDropdown, setPayDropdown] = useState(false);
   const [svcTab, setSvcTab] = useState("maintenance");
   const [errors, setErrors] = useState({});
   const [showConfirm, setShowConfirm] = useState(false);
-  const emptyForm = { name: "", email: "", phone: "", areaCode: "", street: "", city: "", state: "", zip: "", paymentMethod: "zelle", zellePhone: "", billingType: "monthly", defaultCrewId: "", services: [], notes: "" };
+  const emptyForm = { name: "", email: "", phone: "", areaCode: "", street: "", city: "", state: "", zip: "", paymentMethod: "zelle", zellePhone: "", billingType: "monthly", defaultCrewId: "", clientSince: "", services: [], notes: "" };
   const [form, setForm] = useState(emptyForm);
   const pay = payMethods[lang] || payMethods.en;
   const L = (en, es) => lang === "es" ? es : en;
@@ -77,10 +79,16 @@ export default function Clients({ dark, v, t, lang }) {
     return true;
   });
   const totalMonthly = clients.filter(x => x.status === "active").reduce((s, cl) => s + getClientMonthlyTotal(cl.id), 0);
+  useEffect(() => {
+    const handler = (e) => { if (crewRef.current && !crewRef.current.contains(e.target)) setCrewDrop(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
   const openAdd = () => { setEditId(null); setForm(emptyForm); setErrors({}); setSvcTab("maintenance"); setView("form"); };
-  const openEdit = (cl) => { setEditId(cl.id); const parts = (cl.address||"").split(", "); const sz = (parts[2]||"").split(" "); const pp = (cl.phone||"").match(/\((\d{3})\)\s?(.+)/); setForm({ name: cl.name, email: cl.email, phone: pp?pp[2]:cl.phone, areaCode: pp?pp[1]:"", street: parts[0]||"", city: parts[1]||"", state: sz[0]||"", zip: sz[1]||"", paymentMethod: cl.paymentMethod, zellePhone: cl.zellePhone||"", billingType: cl.billingType||"monthly", defaultCrewId: cl.defaultCrewId||"", services: (cl.services||[]).map(s => typeof s === "string" ? { serviceId: s, qty: 1 } : s), notes: cl.notes||"" }); setErrors({}); setSvcTab("maintenance"); setView("form"); };
+  const openEdit = (cl) => { setEditId(cl.id); const parts = (cl.address||"").split(", "); const sz = (parts[2]||"").split(" "); const pp = (cl.phone||"").match(/\((\d{3})\)\s?(.+)/); setForm({ name: cl.name, email: cl.email, phone: pp?pp[2]:cl.phone, areaCode: pp?pp[1]:"", street: parts[0]||"", city: parts[1]||"", state: sz[0]||"", zip: sz[1]||"", paymentMethod: cl.paymentMethod, zellePhone: cl.zellePhone||"", billingType: cl.billingType||"monthly", defaultCrewId: cl.defaultCrewId||"", clientSince: cl.clientSince||"", services: (cl.services||[]).map(s => typeof s === "string" ? { serviceId: s, qty: 1 } : s), notes: cl.notes||"" }); setErrors({}); setSvcTab("maintenance"); setView("form"); };
   const validate = () => { const e={}; if(!form.name.trim())e.name=1; if(!form.email.trim()||!isValidEmail(form.email))e.email=1; if(!form.phone.trim()||!form.areaCode)e.phone=1; if(!form.street.trim())e.street=1; if(!form.city)e.city=1; if(!form.state)e.state=1; if(!form.zip.trim())e.zip=1; if(!form.services.length)e.services=1; setErrors(e); return !Object.keys(e).length; };
-  const handleSave = () => { if(!validate()) return; const c={...form, name:capitalize(form.name), phone:"("+form.areaCode+") "+form.phone, address:[form.street,form.city,form.state+" "+form.zip].filter(Boolean).join(", "), billingType:form.billingType, defaultCrewId:form.defaultCrewId}; if(editId){ updateClient(editId,c); setToast(L("Client updated","Cliente actualizado")); } else { addClient(c); setToast(L("Client created","Cliente creado")); } setTimeout(() => setToast(null), 3000); setView("list"); };
+  const handleSave = () => { if(!validate()) return; const c={...form, name:capitalize(form.name), phone:"("+form.areaCode+") "+form.phone, address:[form.street,form.city,form.state+" "+form.zip].filter(Boolean).join(", "), billingType:form.billingType, defaultCrewId:form.defaultCrewId, clientSince:form.clientSince}; if(editId){ updateClient(editId,c); setToast(L("Client updated","Cliente actualizado")); } else { addClient(c); setToast(L("Client created","Cliente creado")); } setTimeout(() => setToast(null), 3000); setView("list"); };
   const toggleService = (sid) => setForm(f => {
     const exists = f.services.find(s => (typeof s === "string" ? s : s.serviceId) === sid);
     if (exists) return { ...f, services: f.services.filter(s => (typeof s === "string" ? s : s.serviceId) !== sid) };
@@ -147,25 +155,64 @@ export default function Clients({ dark, v, t, lang }) {
             </div>
           </div>
 
-          {/* Default Crew */}
-          <div style={{ marginBottom:14 }}>
-            <span style={LB}>{L("Assigned Crew","Cuadrilla Asignada")}</span>
-            <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-              {(crews || []).map(cr => {
-                const sel = form.defaultCrewId === cr.id;
-                return (
-                  <div key={cr.id} onClick={() => setForm({...form, defaultCrewId: sel ? "" : cr.id})}
-                    style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 12px", borderRadius:8, cursor:"pointer",
-                      border:"2px solid "+(sel?cr.color:v.border), background:sel?cr.color+"10":"transparent", transition:"all 0.15s" }}>
-                    <div style={{ width:10, height:10, borderRadius:"50%", background:cr.color, flexShrink:0 }}/>
-                    <div style={{ flex:1 }}>
-                      <div style={{ fontSize:12, fontWeight:600, color:v.text }}>{cr.name}</div>
-                      <div style={{ fontSize:10, color:v.textSec }}>{cr.leader} · {cr.members.length} {L("members","miembros")}</div>
-                    </div>
-                    {sel && <span style={{ fontSize:12, fontWeight:700, color:cr.color }}>✓</span>}
+          {/* Client Since + Crew */}
+          <div style={{ display:"flex", gap:14, marginBottom:14 }}>
+            <div style={{ width:200 }}>
+              <span style={LB}>{L("Client Since","Cliente Desde")}</span>
+              <input type="month" value={form.clientSince ? form.clientSince.slice(0,7) : ""} onChange={e => setForm({...form, clientSince: e.target.value + "-01"})}
+                style={{...I(), cursor:"pointer"}} />
+            </div>
+            <div style={{ flex:1 }}>
+              <span style={LB}>{L("Assigned Crew","Cuadrilla Asignada")}</span>
+            {(() => {
+              const selCrew = (crews||[]).find(cr => cr.id === form.defaultCrewId);
+              return (
+                <div ref={crewRef} style={{ position:"relative" }}>
+                  <div onClick={() => setCrewDrop(!crewDrop)} style={{...I(), cursor:"pointer", display:"flex", alignItems:"center", gap:8 }}>
+                    {selCrew ? (
+                      <>
+                        <div style={{ width:8, height:8, borderRadius:"50%", background:selCrew.color, flexShrink:0 }}/>
+                        <span style={{ flex:1, fontSize:12, fontWeight:600, color:v.text }}>{selCrew.name}</span>
+                        <span style={{ fontSize:10, color:v.textSec }}>{selCrew.leader} · {selCrew.members.length}</span>
+                        <span style={{ fontSize:9, color:v.textTer }}>▾</span>
+                      </>
+                    ) : (
+                      <>
+                        <span style={{ flex:1, fontSize:12, color:v.textSec }}>{L("Select crew...","Seleccionar cuadrilla...")}</span>
+                        <span style={{ fontSize:9, color:v.textTer }}>▾</span>
+                      </>
+                    )}
                   </div>
-                );
-              })}
+                  {crewDrop && (
+                    <div style={{ position:"absolute", top:"100%", left:0, right:0, marginTop:4, background:v.cardBg, border:"1px solid "+v.border, borderRadius:8, boxShadow:"0 8px 24px rgba(0,0,0,0.15)", zIndex:20, overflow:"hidden" }}>
+                      <div onClick={() => { setForm({...form, defaultCrewId:""}); setCrewDrop(false); }}
+                        style={{ padding:"8px 12px", cursor:"pointer", fontSize:11, color:v.textSec, borderBottom:"1px solid "+v.border+"40" }}
+                        onMouseEnter={e => e.currentTarget.style.background = dark?"rgba(255,255,255,0.04)":"#F8FAFC"}
+                        onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                        {L("No crew","Sin cuadrilla")}
+                      </div>
+                      {(crews||[]).map(cr => {
+                        const sel = form.defaultCrewId === cr.id;
+                        return (
+                          <div key={cr.id} onClick={() => { setForm({...form, defaultCrewId:cr.id}); setCrewDrop(false); }}
+                            style={{ padding:"8px 12px", cursor:"pointer", display:"flex", alignItems:"center", gap:8,
+                              background:sel?(dark?"rgba(22,163,74,0.08)":"#DCFCE7"):"transparent" }}
+                            onMouseEnter={e => { if(!sel) e.currentTarget.style.background = dark?"rgba(255,255,255,0.04)":"#F8FAFC"; }}
+                            onMouseLeave={e => { if(!sel) e.currentTarget.style.background = "transparent"; }}>
+                            <div style={{ width:8, height:8, borderRadius:"50%", background:cr.color, flexShrink:0 }}/>
+                            <div style={{ flex:1 }}>
+                              <div style={{ fontSize:12, fontWeight:sel?700:500, color:sel?"#16A34A":v.text }}>{cr.name}</div>
+                              <div style={{ fontSize:10, color:v.textSec }}>{cr.leader} · {cr.members.length} {L("members","miembros")}</div>
+                            </div>
+                            {sel && <span style={{ fontSize:12, fontWeight:700, color:"#16A34A" }}>✓</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
             </div>
           </div>
 
@@ -226,9 +273,19 @@ export default function Clients({ dark, v, t, lang }) {
               <div style={{ display:"flex", justifyContent:"space-between", padding:"8px 12px", borderRadius:6, background:dark?"rgba(255,255,255,0.02)":v.surface }}>
                 <span style={{ fontSize:11, color:v.textTer }}>{L("Payment","Pago")}</span>
                 <span style={{ fontSize:12, fontWeight:600, color:v.text }}>{pay[form.paymentMethod]}{form.paymentMethod==="zelle" ? " — ("+form.areaCode+") "+form.zellePhone : ""}</span>
-                <div style={{ display:"flex", justifyContent:"space-between", marginTop:6 }}><span style={{ fontSize:11, color:v.textSec }}>{L("Billing","Facturación")}</span><span style={{ fontSize:12, fontWeight:600, color:v.text }}>{form.billingType==="monthly"?L("Monthly","Mensual"):L("Per Visit","Por Visita")}</span></div>
-                {form.defaultCrewId && (() => { const cr = (crews||[]).find(c=>c.id===form.defaultCrewId); return cr ? <div style={{ display:"flex", justifyContent:"space-between", marginTop:6 }}><span style={{ fontSize:11, color:v.textSec }}>{L("Crew","Cuadrilla")}</span><span style={{ fontSize:12, fontWeight:600, color:cr.color }}>● {cr.name}</span></div> : null; })()}
               </div>
+              <div style={{ display:"flex", justifyContent:"space-between", padding:"8px 12px", borderRadius:6, background:dark?"rgba(255,255,255,0.02)":v.surface }}>
+                <span style={{ fontSize:11, color:v.textTer }}>{L("Billing","Facturación")}</span>
+                <span style={{ fontSize:12, fontWeight:600, color:v.text }}>{form.billingType==="monthly"?L("Monthly","Mensual"):L("Per Visit","Por Visita")}</span>
+              </div>
+              {form.clientSince && <div style={{ display:"flex", justifyContent:"space-between", padding:"8px 12px", borderRadius:6, background:dark?"rgba(255,255,255,0.02)":v.surface }}>
+                <span style={{ fontSize:11, color:v.textTer }}>{L("Client Since","Cliente Desde")}</span>
+                <span style={{ fontSize:12, fontWeight:600, color:v.text }}>{new Date(form.clientSince).toLocaleDateString(lang==="es"?"es-EC":"en-US",{month:"short",year:"numeric"})}</span>
+              </div>}
+              {form.defaultCrewId && (() => { const cr = (crews||[]).find(c=>c.id===form.defaultCrewId); return cr ? <div style={{ display:"flex", justifyContent:"space-between", padding:"8px 12px", borderRadius:6, background:dark?"rgba(255,255,255,0.02)":v.surface }}>
+                <span style={{ fontSize:11, color:v.textTer }}>{L("Crew","Cuadrilla")}</span>
+                <span style={{ fontSize:12, fontWeight:600, color:cr.color }}>● {cr.name}</span>
+              </div> : null; })()}
               <div style={{ display:"flex", justifyContent:"space-between", padding:"8px 12px", borderRadius:6, background:dark?"rgba(255,255,255,0.02)":v.surface }}>
                 <span style={{ fontSize:11, color:v.textTer }}>{L("Address","Dirección")}</span>
                 <span style={{ fontSize:12, fontWeight:600, color:v.text, textAlign:"right", maxWidth:260 }}>{form.street}, {form.city}, {form.state} {form.zip}</span>
@@ -268,9 +325,31 @@ export default function Clients({ dark, v, t, lang }) {
         <div><h1 style={{ fontSize:22, fontWeight:800, color:v.text, margin:0 }}>{L("Clients","Clientes")}</h1><p style={{ fontSize:13, color:v.textSec, margin:"2px 0 0" }}>{L("Manage your client database","Gestiona tu base de clientes")}</p></div>
         <button onClick={openAdd} style={{ padding:"8px 16px", borderRadius:8, background:"linear-gradient(135deg,#16A34A,#22C55E)", border:"none", color:"#fff", fontSize:12, fontWeight:600, cursor:"pointer" }}>{L("Add Client","Agregar Cliente")}</button>
       </div>
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(150px, 1fr))", gap:10, marginBottom:16 }}>
-        {[{l:L("Total","Total"),v:clients.length,c:"#3B82F6"},{l:L("Active","Activos"),v:clients.filter(x=>x.status==="active").length,c:"#16A34A"},{l:L("Monthly Revenue","Ingresos/Mes"),v:"$"+totalMonthly.toLocaleString(),c:"#F59E0B"},{l:L("New","Nuevos"),v:"3",c:"#8B5CF6"}].map((k,i) => <div key={i} style={{ padding:12, borderRadius:8, background:v.cardBg, border:"1px solid "+v.border }}><p style={{ fontSize:9, color:v.textSec, fontWeight:600, textTransform:"uppercase", letterSpacing:"0.04em", marginBottom:2 }}>{k.l}</p><p style={{ fontSize:16, fontWeight:800, color:k.c }}>{k.v}</p></div>)}
-      </div>
+      {(() => {
+        const now = new Date();
+        const thisMonth = now.getFullYear() + "-" + String(now.getMonth()+1).padStart(2,"0");
+        const over1y = clients.filter(cl => cl.clientSince && (now - new Date(cl.clientSince)) / (365.25*24*60*60*1000) >= 1).length;
+        const over5y = clients.filter(cl => cl.clientSince && (now - new Date(cl.clientSince)) / (365.25*24*60*60*1000) >= 5).length;
+        const newClients = clients.filter(cl => cl.clientSince && cl.clientSince.slice(0,7) === thisMonth).length;
+        const inactive = clients.filter(cl => cl.status === "inactive").length;
+        return (
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(6, 1fr)", gap:12, marginBottom:16 }}>
+            {[
+              {l:L("Total","Total"), v:clients.length, c:"#3B82F6"},
+              {l:L("Active","Activos"), v:clients.filter(x=>x.status==="active").length, c:"#16A34A"},
+              {l:L("New","Nuevos"), v:newClients, c:"#06B6D4"},
+              {l:L("Inactive","Inactivos"), v:inactive, c:"#94A3B8"},
+              {l:L("+1 Year","+1 Año"), v:over1y, c:"#F59E0B"},
+              {l:L("+5 Years","+5 Años"), v:over5y, c:"#8B5CF6"},
+            ].map((k,i) => <div key={i} style={{ padding:"10px 14px", borderRadius:10, background:v.cardBg, border:"1px solid "+v.border }} className="cy-card-hover">
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+                <span style={{ fontSize:10, color:v.textSec, fontWeight:600, textTransform:"uppercase", letterSpacing:"0.04em" }}>{k.l}</span>
+              </div>
+              <span style={{ fontSize:18, fontWeight:800, color:k.c, display:"block", textAlign:"center" }}>{k.v}</span>
+            </div>)}
+          </div>
+        );
+      })()}
       <div style={{ display:"flex", gap:6, marginBottom:12, alignItems:"center" }}>
         {["all","active","inactive"].map(k => <button key={k} onClick={() => setFilter(k)} style={{ padding:"4px 10px", borderRadius:5, border:"1px solid "+(filter===k?"#16A34A":v.border), background:filter===k?(dark?"rgba(22,163,74,0.12)":"#DCFCE7"):"transparent", color:filter===k?"#16A34A":v.textSec, fontSize:10, fontWeight:600, cursor:"pointer" }}>{k==="all"?L("All","Todos"):k==="active"?L("Active","Activos"):L("Inactive","Inactivos")}</button>)}
         <div style={{ flex:1 }} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder={L("Search...","Buscar...")} style={{...I(), maxWidth:200}} />

@@ -76,7 +76,11 @@ export default function AppLayout() {
         <div style={{ borderTop: "1px solid " + v.border, paddingTop: 6, flexShrink: 0 }}>
           {!collapsed && (
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, padding: "0 4px" }}>
-              <div style={{ width: 28, height: 28, borderRadius: 7, background: dark ? "rgba(22,163,74,0.15)" : "#DCFCE7", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#16A34A", flexShrink: 0 }}>{user?.name?.[0]}</div>
+              {companyProfile?.logo ? (
+                <img src={companyProfile.logo} alt="" style={{ width: 64, height: 64, objectFit: "contain", borderRadius: 10, flexShrink: 0, background: dark ? "rgba(255,255,255,0.06)" : "#F8FAF9", padding: 4 }}/>
+              ) : (
+                <div style={{ width: 64, height: 64, borderRadius: 10, background: dark ? "rgba(22,163,74,0.15)" : "#DCFCE7", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700, color: "#16A34A", flexShrink: 0 }}>{user?.name?.[0]}</div>
+              )}
               <div style={{ overflow: "hidden", flex: 1 }}>
                 <p style={{ fontSize: 12, fontWeight: 600, color: v.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{user?.name}</p>
                 <p style={{ fontSize: 10, color: v.textTer, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{companyProfile?.name || user?.company}</p>
@@ -98,7 +102,7 @@ export default function AppLayout() {
       </aside>
 
       {/* Main content */}
-      <main style={{ flex: 1, padding: 32, overflowY: "auto", maxHeight: "100vh" }}>
+      <main style={{ flex: 1, padding: 32, overflowY: "auto", maxHeight: "100vh", display: "flex", flexDirection: "column" }}>
         {companyProfile && !companyProfile.profileComplete && (
           <div onClick={() => navigate("settings")} style={{ padding:"12px 16px", marginBottom:20, borderRadius:10,
             background: dark ? "rgba(217,119,6,0.1)" : "#FFFBEB", border:"1px solid #F59E0B40",
@@ -119,7 +123,15 @@ export default function AppLayout() {
             </span>
           </div>
         )}
-        <Outlet context={{ dark, v, t, lang, setLang }} />
+        <div style={{ flex: 1 }}>
+          <Outlet context={{ dark, v, t, lang, setLang }} />
+        </div>
+        
+        {/* Footer */}
+        <div style={{ marginTop: 32, padding: "12px 0", borderTop: "1px solid " + v.border, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ fontSize: 10, color: v.textTer }}>© {new Date().getFullYear()} Cleo Yards. {lang === "es" ? "Todos los derechos reservados." : "All rights reserved."}</span>
+          <span style={{ fontSize: 10, color: v.textTer }}>{lang === "es" ? "Hecho con 🌿 para landscapers que luchan." : "Made with 🌿 for landscapers who hustle."}</span>
+        </div>
       </main>
     </div>
   );

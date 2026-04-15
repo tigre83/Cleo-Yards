@@ -58,7 +58,6 @@ export default function Settings({ dark, v, t, lang, setLang }) {
     { key: "company", label: s.company },
     { key: "team", label: lang === "es" ? "Equipo" : "Team" },
     { key: "billing", label: s.billing },
-    { key: "language", label: s.language },
     { key: "integrations", label: s.integrations },
   ];
 
@@ -171,8 +170,8 @@ export default function Settings({ dark, v, t, lang, setLang }) {
 
   return (
     <div>
-      <h1 style={{ fontSize: 26, fontWeight: 800, fontFamily: "'Syne', sans-serif", color: v.text, marginBottom: 4 }}>{s.title}</h1>
-      <p style={{ fontSize: 14, color: v.textSec, marginBottom: 24 }}>{s.sub}</p>
+      <h1 style={{ fontSize: 22, fontWeight: 800, color: v.text, margin: 0 }}>{s.title}</h1>
+      <p style={{ fontSize: 13, color: v.textSec, margin: "2px 0 16px" }}>{s.sub}</p>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 28, flexWrap: "wrap" }}>
         {tabs.map(tab => (
@@ -182,7 +181,7 @@ export default function Settings({ dark, v, t, lang, setLang }) {
         ))}
       </div>
 
-      <div style={{ maxWidth: 640, borderRadius: 14, background: v.cardBg, border: "1px solid " + v.border, padding: 28 }}>
+      <div style={{ borderRadius: 14, background: v.cardBg, border: "1px solid " + v.border, padding: 28 }}>
         {activeTab === "company" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
             {!editing && (
@@ -194,101 +193,127 @@ export default function Settings({ dark, v, t, lang, setLang }) {
             )}
             <div style={{ opacity: editing ? 1 : 0.55, pointerEvents: editing ? "auto" : "none", transition:"opacity 0.3s",
               display: "flex", flexDirection: "column", gap: 20 }}>
-            {/* Logo upload */}
-            <div>
-              <label style={labelStyle}>{lang === "es" ? "Logo de Empresa" : "Company Logo"}</label>
-              <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 4 }}>
-                <div style={{ width: 80, height: 80, borderRadius: 12, border: "2px dashed " + v.border, background: dark ? "rgba(255,255,255,0.03)" : "#F8FAF9",
-                  display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0 }}>
-                  {company.logo ? (
-                    <img src={company.logo} alt="Logo" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
-                  ) : (
-                    <ImagePlus size={24} color={v.border} strokeWidth={1.5}/>
-                  )}
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button onClick={() => fileRef.current?.click()} style={{ padding: "7px 14px", borderRadius: 6, border: "1px solid " + v.border, background: "transparent",
-                      color: v.text, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-                      {company.logo ? (lang === "es" ? "Cambiar" : "Change") : (lang === "es" ? "Subir Logo" : "Upload Logo")}
-                    </button>
-                    {company.logo && (
-                      <button onClick={removeLogo} style={{ padding: "7px 14px", borderRadius: 6, border: "1px solid #DC262640", background: "transparent",
-                        color: "#DC2626", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-                        {lang === "es" ? "Eliminar" : "Remove"}
-                      </button>
-                    )}
+            {/* Two column layout */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+              {/* Left column */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                {/* Logo */}
+                <div>
+                  <label style={labelStyle}>{lang === "es" ? "Logo de Empresa" : "Company Logo"}</label>
+                  <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 4 }}>
+                    <div style={{ width: 64, height: 64, borderRadius: 10, border: "2px dashed " + v.border, background: dark ? "rgba(255,255,255,0.03)" : "#F8FAF9",
+                      display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0 }}>
+                      {company.logo ? (
+                        <img src={company.logo} alt="Logo" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                      ) : (
+                        <ImagePlus size={20} color={v.border} strokeWidth={1.5}/>
+                      )}
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <button onClick={() => fileRef.current?.click()} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid " + v.border, background: "transparent",
+                          color: v.text, fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                          {company.logo ? (lang === "es" ? "Cambiar" : "Change") : (lang === "es" ? "Subir" : "Upload")}
+                        </button>
+                        {company.logo && (
+                          <button onClick={removeLogo} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid #DC262640", background: "transparent",
+                            color: "#DC2626", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                            {lang === "es" ? "Eliminar" : "Remove"}
+                          </button>
+                        )}
+                      </div>
+                      <span style={{ fontSize: 10, color: v.textSec }}>PNG/JPG · 200×200px · 2MB</span>
+                      {logoError && <span style={{ fontSize: 10, color: "#DC2626", fontWeight: 600 }}>{logoError}</span>}
+                    </div>
+                    <input ref={fileRef} type="file" accept="image/png,image/jpeg" onChange={handleLogoUpload} style={{ display: "none" }} />
                   </div>
-                  <span style={{ fontSize: 11, color: v.textSec }}>{lang === "es" ? "PNG o JPG · Mínimo 200×200px · Máximo 2MB" : "PNG or JPG · Min 200×200px · Max 2MB"}</span>
-                  <span style={{ fontSize: 11, color: v.textSec }}>{lang === "es" ? "Fondo transparente recomendado para mejor resultado en PDF" : "Transparent background recommended for best PDF output"}</span>
-                  {logoError && <span style={{ fontSize: 11, color: "#DC2626", fontWeight: 600 }}>{logoError}</span>}
                 </div>
-                <input ref={fileRef} type="file" accept="image/png,image/jpeg" onChange={handleLogoUpload} style={{ display: "none" }} />
+
+                {/* Company Name */}
+                <div>
+                  <label style={labelStyle}>{s.companyName}</label>
+                  <input value={company.name} onChange={e => setCompany(p => ({...p, name: capitalize(e.target.value)}))} style={inputStyle} placeholder="GreenPro Landscaping LLC" />
+                </div>
+
+                {/* Email */}
+                <div>
+                  <label style={labelStyle}>{s.companyEmail}</label>
+                  <div style={{ position: "relative" }}>
+                    <input value={company.email} onChange={e => { const val = e.target.value.replace(/,/g, "."); setCompany(p => ({...p, email: val})); }}
+                      style={{...inputStyle, borderColor: company.email && isValidEmail(company.email) ? "#16A34A" : company.email && !isValidEmail(company.email) ? "#EF4444" : v.border, paddingRight: 30 }}
+                      placeholder="info@company.com" />
+                    {company.email && <span style={{ position:"absolute", right:10, top:"50%", transform:"translateY(-50%)", fontSize:14, fontWeight:700, color: isValidEmail(company.email) ? "#16A34A" : "#EF4444" }}>{isValidEmail(company.email) ? "✓" : "✗"}</span>}
+                  </div>
+                </div>
+
+                {/* Phone */}
+                <div>
+                  <label style={labelStyle}>{s.companyPhone}</label>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <SettingsSearchDrop value={company.areaCode ? "("+company.areaCode+")" : ""} onSelect={i => setCompany(p => ({...p, areaCode: i.code}))} items={US_AREA_CODES}
+                      placeholder={lang === "es" ? "Cód." : "Code"} displayFn={i => i.code ? "("+i.code+")" : ""} listDisplayFn={i => i.code ? "("+i.code+")" : ""} filterFn={(i,q) => i.code.includes(q)||i.city.toLowerCase().includes(q)}
+                      v={v} dark={dark} width={82} />
+                    <input value={company.phoneNumber || ""} onChange={e => {
+                      let val = e.target.value.replace(/[^0-9]/g,"");
+                      if (val.length > 3) val = val.slice(0,3) + "-" + val.slice(3);
+                      if (val.length > 8) val = val.slice(0,8);
+                      setCompany(p => ({...p, phoneNumber: val}));
+                    }} style={{...inputStyle, flex:1}} placeholder="555-0100" maxLength="8" />
+                  </div>
+                </div>
+
+                {/* EIN */}
+                <div>
+                  <label style={labelStyle}>{s.taxId}</label>
+                  <div style={{ position:"relative", maxWidth: 200 }}>
+                    <input value={company.ein || ""} onChange={e => {
+                      let val = e.target.value.replace(/[^0-9-]/g,"");
+                      if (val.length === 2 && !val.includes("-") && company.ein?.length < val.length) val += "-";
+                      if (val.length > 10) val = val.slice(0,10);
+                      setCompany(p => ({...p, ein: val}));
+                    }} style={{...inputStyle, borderColor: company.ein && /^\d{2}-\d{7}$/.test(company.ein) ? "#16A34A" : company.ein?.length > 0 ? "#EF4444" : v.border, paddingRight:24}} placeholder="82-1234567" maxLength="10" />
+                    {company.ein && <span style={{ position:"absolute", right:6, top:"50%", transform:"translateY(-50%)", fontSize:12, fontWeight:700, color: /^\d{2}-\d{7}$/.test(company.ein) ? "#16A34A" : "#EF4444" }}>{/^\d{2}-\d{7}$/.test(company.ein) ? "✓" : "✗"}</span>}
+                  </div>
+                </div>
+              </div>
+
+              {/* Right column */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                {/* Address */}
+                <div>
+                  <label style={labelStyle}>{lang === "es" ? "Dirección" : "Street Address"}</label>
+                  <input value={company.address} onChange={e => setCompany(p => ({...p, address: capitalize(e.target.value)}))} style={inputStyle} placeholder="1200 S Congress Ave" />
+                </div>
+
+                {/* City + State + ZIP */}
+                <div style={{ display: "flex", gap: 12 }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={labelStyle}>{lang === "es" ? "Ciudad" : "City"}</label>
+                    <SettingsSearchDrop value={company.city || ""} onSelect={i => setCompany(p => ({...p, city: i.name, state: i.state}))} items={US_CITIES}
+                      placeholder={lang === "es" ? "Buscar..." : "Search..."} displayFn={i => i.name ? i.name + ", " + i.state : ""} filterFn={(i,q) => i.name.toLowerCase().includes(q)||i.state.toLowerCase().includes(q)}
+                      v={v} dark={dark} />
+                  </div>
+                  <div style={{ width: 120 }}>
+                    <label style={labelStyle}>{lang === "es" ? "Estado" : "State"}</label>
+                    <SettingsSearchDrop value={company.state || ""} onSelect={i => setCompany(p => ({...p, state: i.code}))} items={US_STATES}
+                      placeholder="..." displayFn={i => i.code ? i.code + " - " + i.name : ""} filterFn={(i,q) => i.code.toLowerCase().includes(q)||i.name.toLowerCase().includes(q)}
+                      v={v} dark={dark} />
+                  </div>
+                  <div style={{ width: 110 }}>
+                    <label style={labelStyle}>ZIP</label>
+                    <div style={{ position:"relative" }}>
+                      <input value={company.zip || ""} onChange={e => setCompany(p => ({...p, zip: e.target.value.replace(/[^0-9]/g,"")}))}
+                        style={{...inputStyle, borderColor: company.zip?.length===5 ? "#16A34A" : company.zip?.length > 0 ? "#EF4444" : v.border, paddingRight:24}}
+                        placeholder="78704" maxLength="5" />
+                      {company.zip && <span style={{ position:"absolute", right:6, top:"50%", transform:"translateY(-50%)", fontSize:12, fontWeight:700, color: company.zip.length===5 ? "#16A34A" : "#EF4444" }}>{company.zip.length===5 ? "✓" : "✗"}</span>}
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 
-            {/* Company Name — capitalize */}
-            <div style={{ borderTop: "1px solid " + v.border, paddingTop: 20 }}>
-              <label style={labelStyle}>{s.companyName}</label>
-              <input value={company.name} onChange={e => setCompany(p => ({...p, name: capitalize(e.target.value)}))} style={inputStyle} placeholder="GreenPro Landscaping LLC" />
-            </div>
-
-            {/* Email + Phone */}
-            <div style={{ display: "flex", gap: 14 }}>
-              <div style={{ flex: 1 }}>
-                <label style={labelStyle}>{s.companyEmail}</label>
-                <div style={{ position: "relative" }}>
-                  <input value={company.email} onChange={e => { const val = e.target.value.replace(/,/g, "."); setCompany(p => ({...p, email: val})); }}
-                    style={{...inputStyle, borderColor: company.email && isValidEmail(company.email) ? "#16A34A" : company.email && !isValidEmail(company.email) ? "#EF4444" : v.border, paddingRight: 30 }}
-                    placeholder="info@company.com" />
-                  {company.email && <span style={{ position:"absolute", right:10, top:"50%", transform:"translateY(-50%)", fontSize:14, fontWeight:700, color: isValidEmail(company.email) ? "#16A34A" : "#EF4444" }}>{isValidEmail(company.email) ? "✓" : "✗"}</span>}
-                </div>
-              </div>
-              <div style={{ flex: 1 }}>
-                <label style={labelStyle}>{s.companyPhone}</label>
-                <div style={{ display: "flex", gap: 6 }}>
-                  <SettingsSearchDrop value={company.areaCode ? "("+company.areaCode+")" : ""} onSelect={i => setCompany(p => ({...p, areaCode: i.code}))} items={US_AREA_CODES}
-                    placeholder={lang === "es" ? "Cód." : "Code"} displayFn={i => i.code ? "("+i.code+")" : ""} listDisplayFn={i => i.code ? "("+i.code+")" : ""} filterFn={(i,q) => i.code.includes(q)||i.city.toLowerCase().includes(q)}
-                    v={v} dark={dark} width={82} />
-                  <input value={company.phoneNumber || ""} onChange={e => {
-                    let val = e.target.value.replace(/[^0-9]/g,"");
-                    if (val.length > 3) val = val.slice(0,3) + "-" + val.slice(3);
-                    if (val.length > 8) val = val.slice(0,8);
-                    setCompany(p => ({...p, phoneNumber: val}));
-                  }} style={{...inputStyle, flex:1}} placeholder="555-0100" maxLength="8" />
-                </div>
-              </div>
-            </div>
-
-            {/* Address */}
-            <div><label style={labelStyle}>{lang === "es" ? "Dirección" : "Street Address"}</label><input value={company.address} onChange={e => setCompany(p => ({...p, address: capitalize(e.target.value)}))} style={inputStyle} placeholder="1200 S Congress Ave" /></div>
-
-            {/* City + State + ZIP */}
-            <div style={{ display: "flex", gap: 14 }}>
-              <div style={{ flex: 1 }}>
-                <label style={labelStyle}>{lang === "es" ? "Ciudad" : "City"}</label>
-                <SettingsSearchDrop value={company.city || ""} onSelect={i => setCompany(p => ({...p, city: i.name, state: i.state}))} items={US_CITIES}
-                  placeholder={lang === "es" ? "Buscar..." : "Search..."} displayFn={i => i.name ? i.name + ", " + i.state : ""} filterFn={(i,q) => i.name.toLowerCase().includes(q)||i.state.toLowerCase().includes(q)}
-                  v={v} dark={dark} />
-              </div>
-              <div style={{ width: 120 }}>
-                <label style={labelStyle}>{lang === "es" ? "Estado" : "State"}</label>
-                <SettingsSearchDrop value={company.state || ""} onSelect={i => setCompany(p => ({...p, state: i.code}))} items={US_STATES}
-                  placeholder="..." displayFn={i => i.code ? i.code + " - " + i.name : ""} filterFn={(i,q) => i.code.toLowerCase().includes(q)||i.name.toLowerCase().includes(q)}
-                  v={v} dark={dark} />
-              </div>
-              <div style={{ width: 100 }}>
-                <label style={labelStyle}>ZIP</label>
-                <div style={{ position:"relative" }}>
-                  <input value={company.zip || ""} onChange={e => setCompany(p => ({...p, zip: e.target.value.replace(/[^0-9]/g,"")}))}
-                    style={{...inputStyle, borderColor: company.zip?.length===5 ? "#16A34A" : company.zip?.length > 0 ? "#EF4444" : v.border, paddingRight:24}}
-                    placeholder="78704" maxLength="5" />
-                  {company.zip && <span style={{ position:"absolute", right:6, top:"50%", transform:"translateY(-50%)", fontSize:12, fontWeight:700, color: company.zip.length===5 ? "#16A34A" : "#EF4444" }}>{company.zip.length===5 ? "✓" : "✗"}</span>}
-                </div>
-              </div>
-            </div>
-
-            <div style={{ width: 220 }}>
+            {/* EIN was moved to left column, remove the old one */}
+            <div style={{ display: "none" }}>
               <label style={labelStyle}>{s.taxId}</label>
               <div style={{ position:"relative" }}>
                 <input value={company.ein || ""} onChange={e => {
@@ -302,7 +327,7 @@ export default function Settings({ dark, v, t, lang, setLang }) {
             </div>
 
             </div>{/* end opacity wrapper */}
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 4 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 12, marginTop: 4 }}>
               {editing ? (
                 <button onClick={handleSaveCompany} style={{ padding: "12px 28px", borderRadius: 10, background: "linear-gradient(135deg, #16A34A, #22C55E)", border: "none", color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>{s.save}</button>
               ) : (
@@ -333,23 +358,6 @@ export default function Settings({ dark, v, t, lang, setLang }) {
           </div>
         )}
 
-        {activeTab === "language" && (
-          <div>
-            <p style={{ fontSize: 14, color: v.textSec, marginBottom: 20 }}>
-              {lang === "en" ? "Choose the language for the business portal. This only affects the dashboard — your crews and clients can each use their preferred language." : "Elige el idioma del portal de negocio. Esto solo afecta el dashboard — tus cuadrillas y clientes pueden usar su idioma preferido."}
-            </p>
-            <div style={{ display: "flex", gap: 12 }}>
-              <button onClick={() => setLang("en")} style={{ flex: 1, padding: "16px", borderRadius: 12, border: `2px solid ${lang === "en" ? "#16A34A" : v.border}`, background: lang === "en" ? (dark ? "rgba(22,163,74,0.08)" : "#DCFCE7") : "transparent", cursor: "pointer", textAlign: "center" }}>
-                <p style={{ fontSize: 24, marginBottom: 6 }}>🇺🇸</p>
-                <p style={{ fontSize: 14, fontWeight: 700, color: lang === "en" ? "#16A34A" : v.text }}>English</p>
-              </button>
-              <button onClick={() => setLang("es")} style={{ flex: 1, padding: "16px", borderRadius: 12, border: `2px solid ${lang === "es" ? "#16A34A" : v.border}`, background: lang === "es" ? (dark ? "rgba(22,163,74,0.08)" : "#DCFCE7") : "transparent", cursor: "pointer", textAlign: "center" }}>
-                <p style={{ fontSize: 24, marginBottom: 6 }}>🇪🇸</p>
-                <p style={{ fontSize: 14, fontWeight: 700, color: lang === "es" ? "#16A34A" : v.text }}>Español</p>
-              </button>
-            </div>
-          </div>
-        )}
 
         {activeTab === "integrations" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
