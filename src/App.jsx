@@ -35,10 +35,9 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <DataProvider>
           <Routes>
             <Route path="/" element={<Landing />} />
-            <Route path="/app" element={<ProtectedRoute role="business"><AppLayout /></ProtectedRoute>}>
+            <Route path="/app" element={<ProtectedRoute role="business"><DataProvider><AppLayout /></DataProvider></ProtectedRoute>}>
               <Route index element={<Wrap Component={Dashboard} />} />
               <Route path="scheduling" element={<Wrap Component={Scheduling} />} />
               <Route path="invoicing" element={<Wrap Component={Invoicing} />} />
@@ -53,7 +52,6 @@ export default function App() {
             </Route>
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>
-        </DataProvider>
       </AuthProvider>
     </BrowserRouter>
   );
