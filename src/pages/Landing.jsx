@@ -365,6 +365,21 @@ export default function App() {
     return () => window.removeEventListener("scroll", fn);
   }, []);
 
+  // Google Analytics
+  useEffect(() => {
+    const id = "G-X64NX990GQ";
+    if (document.querySelector(`script[src*="${id}"]`)) return;
+    const s = document.createElement("script");
+    s.async = true;
+    s.src = `https://www.googletagmanager.com/gtag/js?id=${id}`;
+    document.head.appendChild(s);
+    window.dataLayer = window.dataLayer || [];
+    function gtag() { window.dataLayer.push(arguments); }
+    window.gtag = gtag;
+    gtag("js", new Date());
+    gtag("config", id);
+  }, []);
+
   const v = dark
     ? { bg: "#0B1120", surface: "#131B2E", text: "#F1F5F9", textSec: "#94A3B8", textTer: "#64748B", border: "#1E293B", cardBg: "#131B2E", navBg: "rgba(11,17,32,0.92)" }
     : { bg: "#FFFFFF", surface: "#F8FAFC", text: "#0F172A", textSec: "#64748B", textTer: "#94A3B8", border: "#E2E8F0", cardBg: "#FFFFFF", navBg: "rgba(255,255,255,0.92)" };

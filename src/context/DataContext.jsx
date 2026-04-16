@@ -74,7 +74,7 @@ export function DataProvider({ children }) {
         const jobsWithSvc = (jobData || []).map(j => {
           const jCamel = toCamel(j);
           const svcList = (jsData || []).filter(js => js.job_id === j.id).map(js => ({ serviceId: js.service_id, qty: js.qty }));
-          return { ...jCamel, serviceIds: svcList };
+          return { ...jCamel, serviceIds: svcList, completedServices: j.completed_services || [] };
         });
         setJobs(jobsWithSvc);
 
@@ -244,8 +244,128 @@ export function DataProvider({ children }) {
     });
   };
 
-  const completeJob = (id) => updateJob(id, { status: "completed" });
+  const completeJob = async (id) => {
+    await updateJob(id, { status: "completed" });
+    
+    // Check auto-invoicing
+    const job = jobs.find(j => j.id === id);
+    if (!job) return;
+    const client = clients.find(cl => cl.id === job.clientId);
+    if (!client) return;
+
+    if (client.billingType === "per_visit") {
+      // Immediate invoice for this job
+      const jobSvcs = (job.serviceIds || []).map(entry => {
+        const sid = typeof entry === "object" ? entry.serviceId : entry;
+        const qty = typeof entry === "object" ? entry.qty || 1 : 1;
+        const svc = services.find(s => s.id === sid);
+        return svc ? { serviceId: sid, name: svc.name, qty, price: svc.price } : null;
+      }).filter(Boolean);
+      
+      const subtotal = jobSvcs.reduce((s, i) => s + i.qty * i.price, 0);
+      const taxAmount = subtotal * (STATE_TAX / 100);
+      
+      await addInvoice({
+        clientId: client.id,
+        invoiceNumber: getNextInvoiceNumber(),
+        date: new Date().toISOString().split("T")[0],
+        dueDate: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+        status: "sent",
+        sentDate: new Date().toISOString().split("T")[0],
+        subtotal,
+        taxRate: STATE_TAX,
+        taxAmount,
+        total: subtotal + taxAmount,
+        notes: "Service completed " + job.date,
+        paymentMethod: client.paymentMethod,
+        items: jobSvcs,
+      });
+    } else if (client.billingType === "monthly") {
+      // Check if all jobs for this client this month are completed
+      const jobDate = new Date(job.date + "T12:00:00");
+      const monthStart = new Date(jobDate.getFullYear(), jobDate.getMonth(), 1).toISOString().split("T")[0];
+      const monthEnd = new Date(jobDate.getFullYear(), jobDate.getMonth() + 1, 0).toISOString().split("T")[0];
+      
+      // Get all jobs for this client this month (use updated state)
+      const updatedJobs = jobs.map(j => j.id === id ? { ...j, status: "completed" } : j);
+      const clientMonthJobs = updatedJobs.filter(j => 
+        j.clientId === client.id && j.date >= monthStart && j.date <= monthEnd
+      );
+      
+      const allCompleted = clientMonthJobs.length > 0 && clientMonthJobs.every(j => j.status === "completed" || j.status === "cancelled");
+      
+      if (allCompleted) {
+        // Consolidate all completed jobs into one invoice
+        const completedJobs = clientMonthJobs.filter(j => j.status === "completed");
+        const allItems = {};
+        
+        completedJobs.forEach(j => {
+          (j.serviceIds || []).forEach(entry => {
+            const sid = typeof entry === "object" ? entry.serviceId : entry;
+            const qty = typeof entry === "object" ? entry.qty || 1 : 1;
+            if (allItems[sid]) {
+              allItems[sid].qty += qty;
+            } else {
+              const svc = services.find(s => s.id === sid);
+              if (svc) allItems[sid] = { serviceId: sid, name: svc.name, qty, price: svc.price };
+            }
+          });
+        });
+        
+        const items = Object.values(allItems);
+        const subtotal = items.reduce((s, i) => s + i.qty * i.price, 0);
+        const taxAmount = subtotal * (STATE_TAX / 100);
+        const monthName = jobDate.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+        
+        await addInvoice({
+          clientId: client.id,
+          invoiceNumber: getNextInvoiceNumber(),
+          date: new Date().toISOString().split("T")[0],
+          dueDate: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+          status: "sent",
+          sentDate: new Date().toISOString().split("T")[0],
+          subtotal,
+          taxRate: STATE_TAX,
+          taxAmount,
+          total: subtotal + taxAmount,
+          notes: monthName + " services",
+          paymentMethod: client.paymentMethod,
+          items,
+        });
+      }
+    }
+  };
   const cancelJob = (id) => updateJob(id, { status: "cancelled" });
+
+  const toggleServiceComplete = async (jobId, serviceId) => {
+    const job = jobs.find(j => j.id === jobId);
+    if (!job) return;
+    
+    const completed = [...(job.completedServices || [])];
+    const idx = completed.indexOf(serviceId);
+    if (idx >= 0) {
+      completed.splice(idx, 1);
+    } else {
+      completed.push(serviceId);
+    }
+    
+    // Update local state
+    setJobs(p => p.map(j => j.id === jobId ? { ...j, completedServices: completed } : j));
+    
+    // Update Supabase
+    await supabase.from("jobs").update({ completed_services: completed }).eq("id", jobId);
+    
+    // Auto-start if first service toggled
+    if (completed.length > 0 && job.status === "assigned") {
+      await updateJob(jobId, { status: "inProgress" });
+    }
+    
+    // Check if all services are completed
+    const allSvcIds = (job.serviceIds || []).map(s => typeof s === "object" ? s.serviceId : s);
+    const allDone = allSvcIds.every(sid => completed.includes(sid));
+    
+    return { completed, allDone };
+  };
   const startJob = (id) => updateJob(id, { status: "inProgress" });
   const reassignJob = (id, crewId) => updateJob(id, { crewId });
 
@@ -263,33 +383,47 @@ export function DataProvider({ children }) {
       if (dt.getDay() >= 1 && dt.getDay() <= 5) weekdays.push(dt);
     }
 
-    monthlyClients.forEach(cl => {
-      (cl.services || []).forEach(cs => {
-        const svcId = typeof cs === "string" ? cs : cs.serviceId;
-        const qty = typeof cs === "string" ? 1 : (cs.qty || 1);
-        const spacing = Math.max(1, Math.floor(weekdays.length / qty));
+    const startHours = ["08:00", "08:30", "09:00", "09:30", "10:00", "10:30", "11:00", "13:00", "13:30", "14:00"];
 
-        for (let i = 0; i < qty; i++) {
-          const dayIdx = Math.min(i * spacing, weekdays.length - 1);
-          const dt = weekdays[dayIdx];
-          const dateStr = dt.toISOString().split("T")[0];
-          const exists = jobs.some(j => j.clientId === cl.id && j.date === dateStr &&
-            (j.serviceIds || []).some(s => (typeof s === "object" ? s.serviceId : s) === svcId));
-          if (!exists) {
-            generated.push({
-              clientId: cl.id,
-              serviceIds: [{ serviceId: svcId, qty: 1 }],
-              crewId: cl.defaultCrewId,
-              date: dateStr,
-              time: "08:00",
-              duration: 1,
-              status: "assigned",
-              notes: "",
-              autoGenerated: true,
-            });
-          }
-        }
-      });
+    monthlyClients.forEach((cl, clIdx) => {
+      const svcs = (cl.services || []).map(cs => ({
+        serviceId: typeof cs === "string" ? cs : cs.serviceId,
+        qty: typeof cs === "string" ? 1 : (cs.qty || 1),
+      }));
+      if (svcs.length === 0) return;
+
+      // Max qty determines number of visits per month
+      const maxVisits = Math.max(...svcs.map(s => s.qty));
+      const spacing = Math.max(1, Math.floor(weekdays.length / maxVisits));
+
+      for (let visit = 0; visit < maxVisits; visit++) {
+        const dayIdx = Math.min(visit * spacing, weekdays.length - 1);
+        const dt = weekdays[dayIdx];
+        const dateStr = dt.toISOString().split("T")[0];
+
+        // Services for this visit: include service if visit < its qty
+        const visitSvcs = svcs.filter(s => visit < s.qty).map(s => ({ serviceId: s.serviceId, qty: 1 }));
+        if (visitSvcs.length === 0) continue;
+
+        // Check if a job already exists for this client on this date
+        const exists = jobs.some(j => j.clientId === cl.id && j.date === dateStr);
+        if (exists) continue;
+
+        const duration = Math.max(1, Math.round(visitSvcs.length * 0.5 * 10) / 10);
+        const time = startHours[clIdx % startHours.length];
+
+        generated.push({
+          clientId: cl.id,
+          serviceIds: visitSvcs,
+          crewId: cl.defaultCrewId,
+          date: dateStr,
+          time,
+          duration,
+          status: "assigned",
+          notes: "",
+          autoGenerated: true,
+        });
+      }
     });
 
     // Batch insert to Supabase
@@ -457,7 +591,7 @@ export function DataProvider({ children }) {
       companyProfile, updateCompanyProfile, crews, jobs, services, clients, invoices, notifications, STATE_TAX,
       addCrew, updateCrew,
       addJob, updateJob, deleteJob, getJobsByDate, getJobsByCrew, getJobsByClient, getJobsByWeek,
-      completeJob, cancelJob, startJob, reassignJob, getNextJobId, generateMonthlyJobs,
+      completeJob, cancelJob, startJob, reassignJob, getNextJobId, generateMonthlyJobs, toggleServiceComplete,
       addService, updateService,
       addClient, updateClient,
       addInvoice, updateInvoice, sendInvoice, markPaid,

@@ -18,7 +18,7 @@ const US_STATES = [{code:"AL",name:"Alabama"},{code:"AK",name:"Alaska"},{code:"A
 const categories = { maintenance: { en: "Maintenance", es: "Mantenimiento", color: "#16A34A" }, improvements: { en: "Improvements", es: "Mejoras", color: "#3B82F6" }, installation: { en: "Installation", es: "Instalación", color: "#8B5CF6" }, specials: { en: "Specials", es: "Especiales", color: "#F59E0B" } };
 const payMethods = { en: { zelle: "Zelle", card: "Credit Card", ach: "ACH Transfer", cash: "Cash", check: "Check" }, es: { zelle: "Zelle", card: "Tarjeta de Crédito", ach: "Transferencia ACH", cash: "Efectivo", check: "Cheque" } };
 
-const SearchDrop = ({ value, onSelect, items, placeholder, displayFn, filterFn, v, dark, width }) => {
+const SearchDrop = ({ value, onSelect, items, placeholder, displayFn, filterFn, v, dark, width, dropdownMinWidth }) => {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const ref = useRef();
@@ -31,7 +31,7 @@ const SearchDrop = ({ value, onSelect, items, placeholder, displayFn, filterFn, 
         <span style={{ fontSize: 9, color: v.textTer, marginLeft: 6, flexShrink: 0 }}>▾</span>
       </div>
       {open && (
-        <div style={{ position: "absolute", top: "100%", left: 0, minWidth: 200, marginTop: 3, background: v.cardBg, border: "1px solid " + v.border, borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,0.15)", zIndex: 20, maxHeight: 200, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <div style={{ position: "absolute", top: "100%", left: 0, width: dropdownMinWidth || undefined, minWidth: dropdownMinWidth ? undefined : 200, marginTop: 3, background: v.cardBg, border: "1px solid " + v.border, borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,0.15)", zIndex: 20, maxHeight: 200, display: "flex", flexDirection: "column", overflow: "hidden" }}>
           <div style={{ padding: 6, borderBottom: "1px solid " + v.border }}>
             <input autoFocus value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => { if (e.key === "Escape") setOpen(false); }} placeholder={"🔍 " + placeholder} style={{ width: "100%", padding: "5px 8px", borderRadius: 5, border: "1px solid " + v.border, background: dark ? "rgba(255,255,255,0.04)" : "#fff", color: v.text, fontSize: 11, outline: "none", fontFamily: "'DM Sans'", boxSizing: "border-box" }} />
           </div>
@@ -49,7 +49,7 @@ const SearchDrop = ({ value, onSelect, items, placeholder, displayFn, filterFn, 
 
 const PhoneField = ({ areaCode, number, onAreaChange, onNumberChange, items, v, dark, placeholder, error }) => (
   <div style={{ display: "flex", gap: 8 }}>
-    <SearchDrop value={areaCode} onSelect={i => onAreaChange(i.code)} items={items} placeholder={placeholder || "Cód."} displayFn={(i) => i.code ? "("+i.code+")" : ""} filterFn={(i,q) => i.code.includes(q)||i.city.toLowerCase().includes(q)} v={v} dark={dark} width={76} />
+    <SearchDrop value={areaCode} onSelect={i => onAreaChange(i.code)} items={items} placeholder={placeholder || "Cód."} displayFn={(i) => i.code ? "("+i.code+")" : ""} filterFn={(i,q) => i.code.includes(q)||i.city.toLowerCase().includes(q)} v={v} dark={dark} width={76} dropdownMinWidth={76} />
     <input value={number} onChange={e => onNumberChange(e.target.value.replace(/[^0-9-]/g, ""))} style={{ flex: 1, padding: "7px 10px", borderRadius: 6, border: "1px solid " + (error ? "#EF4444" : v.border), background: dark ? "rgba(255,255,255,0.04)" : v.surface, color: v.text, fontSize: 12, outline: "none", fontFamily: "'DM Sans'", height: 34, boxSizing: "border-box" }} placeholder="555-0142" maxLength="8" />
   </div>
 );
