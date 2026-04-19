@@ -13,6 +13,7 @@ import RoutesPage from "./pages/app/Routes";
 import Settings from "./pages/app/Settings";
 import ClientLayout from "./pages/client/ClientLayout";
 import ClientHome from "./pages/client/ClientHome";
+import PayInvoice from "./pages/client/PayInvoice";
 
 function ProtectedRoute({ children, role }) {
   const { user, isAuthenticated } = useAuth();
@@ -37,6 +38,7 @@ export default function App() {
       <AuthProvider>
           <Routes>
             <Route path="/" element={<Landing />} />
+            <Route path="/pay/:invoiceId" element={<PayInvoice />} />
             <Route path="/app" element={<ProtectedRoute role="business"><DataProvider><AppLayout /></DataProvider></ProtectedRoute>}>
               <Route index element={<Wrap Component={Dashboard} />} />
               <Route path="scheduling" element={<Wrap Component={Scheduling} />} />

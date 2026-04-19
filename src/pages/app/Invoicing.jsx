@@ -7,7 +7,8 @@ import {
   Clock, AlertTriangle, DollarSign, Trash2, Download,
   MoreHorizontal, Eye, Printer, Mail, ChevronDown, X, Leaf,
   Calendar, Hash, User, MapPin, Phone, Building2, Receipt,
-  ArrowUpRight, ArrowDownRight, TrendingUp, Check
+  ArrowUpRight, ArrowDownRight, TrendingUp, Check,
+  Zap, CreditCard, Banknote
 } from "lucide-react";
 
 /* ═══════════════════════════════════════════════════════════════
@@ -870,17 +871,12 @@ function InvoiceDetail({ invoice, onBack, onEdit, clients, d, lang, companyProfi
   };
   const L = (en, es) => lang === "es" ? es : en;
   const payMethods = [
-    { key: "zelle", label: "Zelle", icon: "⚡" },
-    { key: "cash", label: L("Cash", "Efectivo"), icon: "💵" },
-    { key: "check", label: L("Check", "Cheque"), icon: "📄" },
-    { key: "card", label: L("Credit Card", "Tarjeta"), icon: "💳" },
-    { key: "ach", label: "ACH Transfer", icon: "🏦" },
+    { key: "zelle", label: "Zelle", Icon: Zap },
+    { key: "cash", label: L("Cash", "Efectivo"), Icon: Banknote },
+    { key: "check", label: L("Check", "Cheque"), Icon: FileText },
+    { key: "card", label: L("Credit Card", "Tarjeta"), Icon: CreditCard },
+    { key: "ach", label: "ACH Transfer", Icon: Building2 },
   ];
-  const fmtPayDate = (val) => {
-    if (!val) return "";
-    const dt = new Date(val + "T12:00");
-    return String(dt.getDate()).padStart(2,"0") + "/" + String(dt.getMonth()+1).padStart(2,"0") + "/" + dt.getFullYear();
-  };
 
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:20 }}>
@@ -1112,8 +1108,8 @@ function InvoiceDetail({ invoice, onBack, onEdit, clients, d, lang, companyProfi
                         style={{ padding:"8px 14px", borderRadius:8, cursor:"pointer", fontSize:12, fontWeight:sel ? 700 : 500,
                           border:`2px solid ${sel ? G.green : G.border}`,
                           background: sel ? `${G.green}10` : "transparent",
-                          color: sel ? G.green : G.textSec, display:"flex", alignItems:"center", gap:5, transition:"all 0.15s" }}>
-                        <span style={{ fontSize:14 }}>{pm.icon}</span> {pm.label}
+                          color: sel ? G.green : G.textSec, display:"flex", alignItems:"center", gap:6, transition:"all 0.15s" }}>
+                        <pm.Icon size={14} color={sel ? G.green : G.dim}/> {pm.label}
                       </div>
                     );
                   })}
