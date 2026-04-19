@@ -4,6 +4,7 @@ import { supabase } from "../lib/supabase";
 const DataContext = createContext(null);
 const COMPANY_ID = "00000000-0000-0000-0000-000000000001";
 const STATE_TAX = 6.25;
+const EMAIL_API = "https://cleo-yards-emails-production.up.railway.app/api/emails";
 
 /* ── Snake ↔ Camel converters ── */
 const toCamel = (obj) => {
@@ -346,6 +347,30 @@ export function DataProvider({ children }) {
         });
       }
     }
+
+    // Send job completion email (informational, no prices)
+    try {
+      if (client?.email) {
+        const jobSvcNames = (job.serviceIds || []).map(entry => {
+          const sid = typeof entry === "object" ? entry.serviceId : entry;
+          const svc = services.find(s => s.id === sid);
+          return svc ? { name: svc.name } : null;
+        }).filter(Boolean);
+
+        await fetch(`${EMAIL_API}/job-complete`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            company: companyProfile,
+            client,
+            job: { ...job, status: "completed" },
+            services: jobSvcNames,
+          }),
+        });
+      }
+    } catch (err) {
+      console.error("Job complete email error:", err);
+    }
   };
   const cancelJob = (id) => updateJob(id, { status: "cancelled" });
 
@@ -541,6 +566,28 @@ export function DataProvider({ children }) {
     const now = new Date().toISOString().split("T")[0];
     setInvoices(p => p.map(i => i.id === id ? { ...i, status: "sent", sentDate: now } : i));
     await supabase.from("invoices").update({ status: "sent", sent_date: now }).eq("id", id);
+
+    // Send email via backend
+    try {
+      const inv = invoices.find(i => i.id === id);
+      if (!inv) return;
+      const client = clients.find(c => c.id === inv.clientId);
+      if (!client?.email) return;
+      const items = inv.items || [];
+
+      await fetch(`${EMAIL_API}/invoice`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          company: companyProfile,
+          client,
+          invoice: { ...inv, status: "sent", sentDate: now },
+          items,
+        }),
+      });
+    } catch (err) {
+      console.error("Email send error:", err);
+    }
   };
 
   const markPaid = async (id, paymentDetails = {}) => {
