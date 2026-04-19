@@ -919,11 +919,7 @@ export default function Scheduling({ dark, v, t, lang }) {
                 <Users size={14} color="#16A34A"/> {L("Client", "Cliente")}
               </div>
               <ClientPicker clients={clients} value={editJob.clientId} onCreateClient={() => { setShowNewClient(true); setNewClientForm({ name: "", email: "", phone: "", areaCode: "", street: "", city: "", state: "", zip: "", paymentMethod: "zelle", zellePhone: "", billingType: "per_visit", services: [], notes: "" }); }} onChange={(id) => {
-                setEditJob(p => ({ ...p, clientId: id }));
-                const cl = (clients || []).find(c => c.id === id);
-                if (cl?.services?.length && !editJob.serviceIds?.length) {
-                  setEditJob(p => ({ ...p, clientId: id, serviceIds: cl.services }));
-                }
+                setEditJob(p => ({ ...p, clientId: id, serviceIds: [] }));
               }} v={v} dark={dark} lang={lang} inputStyle={inputStyle}/>
               {selectedClient && (
                 <div style={{ marginTop: 10, padding: "8px 10px", background: dark ? "rgba(255,255,255,0.02)" : "#F8FAF9", borderRadius: 6, fontSize: 11, color: v.textSec, lineHeight: 1.6 }}>
