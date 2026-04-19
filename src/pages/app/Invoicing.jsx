@@ -586,7 +586,7 @@ function InvoiceForm({ onCancel, onSave, clients, services, editInvoice, d, lang
       setTimeout(() => setFormError(""), 3000);
       return;
     }
-    if (!form.dueDate) {
+    if (status !== "draft" && !form.dueDate) {
       setFormError(lang === "es" ? "La fecha de vencimiento es obligatoria" : "Due date is required");
       setTimeout(() => setFormError(""), 3000);
       return;

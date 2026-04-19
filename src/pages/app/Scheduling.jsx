@@ -28,7 +28,7 @@ const getWeekDates = (baseDate) => {
   const diff = day === 0 ? -6 : 1 - day; // Monday start
   const monday = new Date(d);
   monday.setDate(d.getDate() + diff);
-  return Array.from({ length: 5 }, (_, i) => {
+  return Array.from({ length: 7 }, (_, i) => {
     const dt = new Date(monday);
     dt.setDate(monday.getDate() + i);
     return dt.toISOString().split("T")[0];
@@ -356,7 +356,7 @@ export default function Scheduling({ dark, v, t, lang }) {
     const weekdays = [];
     for (let d = 1; d <= daysInMonth; d++) {
       const dt = new Date(year, month - 1, d);
-      if (dt.getDay() >= 1 && dt.getDay() <= 5) weekdays.push(dt.toISOString().split("T")[0]);
+      if (dt.getDay() >= 1 && dt.getDay() <= 6) weekdays.push(dt.toISOString().split("T")[0]);
     }
     const monthlyClients = (clients || []).filter(cl => cl.billingType === "monthly" && cl.defaultCrewId && cl.status === "active");
     let count = 0;
@@ -1249,7 +1249,7 @@ export default function Scheduling({ dark, v, t, lang }) {
             const weekdays = [];
             for (let d = 1; d <= daysInMonth; d++) {
               const dt = new Date(year, month - 1, d);
-              if (dt.getDay() >= 1 && dt.getDay() <= 5) weekdays.push(dt.toISOString().split("T")[0]);
+              if (dt.getDay() >= 1 && dt.getDay() <= 6) weekdays.push(dt.toISOString().split("T")[0]);
             }
             monthlyClients.forEach(cl => {
               const crew = (crews || []).find(cr => cr.id === cl.defaultCrewId);
