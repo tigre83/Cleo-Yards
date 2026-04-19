@@ -830,6 +830,10 @@ function InvoiceForm({ onCancel, onSave, clients, services, editInvoice, d, lang
 function InvoiceDetail({ invoice, onBack, onEdit, clients, d, lang, companyProfile }) {
   const { sendInvoice, markPaid, STATE_TAX } = useData();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [showPayModal, setShowPayModal] = useState(false);
+  const [payForm, setPayForm] = useState({ paidDate: "", paymentMethod: "zelle", amount: "", notes: "" });
+  const [payLoading, setPayLoading] = useState(false);
+  const [payToast, setPayToast] = useState(null);
   const menuRef = useRef(null);
 
   useEffect(() => {
@@ -843,7 +847,40 @@ function InvoiceDetail({ invoice, onBack, onEdit, clients, d, lang, companyProfi
   const dueDays = daysDiff(invoice.dueDate);
   const taxRate = (invoice.taxRate || 6.25).toFixed(2);
   const handleSend = async () => { if (sendInvoice) await sendInvoice(invoice.id); };
-  const handlePaid = async () => { if (markPaid) await markPaid(invoice.id); };
+  const openPayModal = () => {
+    setPayForm({
+      paidDate: new Date().toISOString().split("T")[0],
+      paymentMethod: cust?.paymentMethod || invoice.paymentMethod || "zelle",
+      amount: (invoice.total || 0).toFixed(2),
+      notes: "",
+    });
+    setShowPayModal(true);
+  };
+  const confirmPay = async () => {
+    setPayLoading(true);
+    await markPaid(invoice.id, {
+      paidDate: payForm.paidDate,
+      paymentMethod: payForm.paymentMethod,
+      notes: payForm.notes || undefined,
+    });
+    setPayLoading(false);
+    setShowPayModal(false);
+    setPayToast(L("Payment recorded successfully!", "¡Pago registrado exitosamente!"));
+    setTimeout(() => setPayToast(null), 3000);
+  };
+  const L = (en, es) => lang === "es" ? es : en;
+  const payMethods = [
+    { key: "zelle", label: "Zelle", icon: "⚡" },
+    { key: "cash", label: L("Cash", "Efectivo"), icon: "💵" },
+    { key: "check", label: L("Check", "Cheque"), icon: "📄" },
+    { key: "card", label: L("Credit Card", "Tarjeta"), icon: "💳" },
+    { key: "ach", label: "ACH Transfer", icon: "🏦" },
+  ];
+  const fmtPayDate = (val) => {
+    if (!val) return "";
+    const dt = new Date(val + "T12:00");
+    return String(dt.getDate()).padStart(2,"0") + "/" + String(dt.getMonth()+1).padStart(2,"0") + "/" + dt.getFullYear();
+  };
 
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:20 }}>
@@ -864,7 +901,7 @@ function InvoiceDetail({ invoice, onBack, onEdit, clients, d, lang, companyProfi
         </div>
         <div style={{ display:"flex", gap:8, position:"relative" }} ref={menuRef}>
           {invoice.status === "draft" && <button onClick={handleSend} style={sBtn(true)}><Send size={14}/> {d.sendInvoice}</button>}
-          {["sent","partial","overdue"].includes(invoice.status) && <button onClick={handlePaid} style={sBtn(true)}><CheckCircle size={14}/> {d.markPaid}</button>}
+          {["sent","partial","overdue"].includes(invoice.status) && <button onClick={openPayModal} style={sBtn(true)}><CheckCircle size={14}/> {d.markPaid}</button>}
           <button onClick={() => onEdit(invoice)} style={sBtn(false)}><FileText size={14}/> {d.edit}</button>
           <button onClick={() => setMenuOpen(!menuOpen)} style={{ ...sBtn(false), padding:"8px 8px" }}><MoreHorizontal size={16}/></button>
           {menuOpen && (
@@ -1027,10 +1064,105 @@ function InvoiceDetail({ invoice, onBack, onEdit, clients, d, lang, companyProfi
           </div>
         </div>
       </div>
+
+      {/* ── Payment Toast ── */}
+      {payToast && (
+        <div style={{ position:"fixed", bottom:24, right:24, padding:"12px 20px", borderRadius:8,
+          background: G.green, color:"#FFF", fontSize:13, fontWeight:600,
+          fontFamily: G.font, boxShadow:"0 8px 24px rgba(0,0,0,0.2)", display:"flex", alignItems:"center", gap:8, zIndex:300,
+          animation:"slideUp 0.3s ease" }}>
+          <CheckCircle size={16}/> {payToast}
+        </div>
+      )}
+
+      {/* ── Mark Paid Modal ── */}
+      {showPayModal && (
+        <div onClick={() => setShowPayModal(false)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center", backdropFilter:"blur(4px)" }}>
+          <div onClick={e => e.stopPropagation()} style={{ width:"100%", maxWidth:420, background: G.card, borderRadius:16, border:`1px solid ${G.border}`, boxShadow:"0 24px 64px rgba(0,0,0,0.25)", overflow:"hidden", fontFamily: G.font }}>
+            {/* Header */}
+            <div style={{ padding:"18px 24px 14px", borderBottom:`1px solid ${G.borderLt}`, display:"flex", alignItems:"center", gap:10 }}>
+              <div style={{ width:36, height:36, borderRadius:10, background:`${G.green}12`, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                <CheckCircle size={18} color={G.green}/>
+              </div>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:16, fontWeight:800, color: G.text }}>{L("Confirm Payment", "Confirmar Pago")}</div>
+                <div style={{ fontSize:11, color: G.dim }}>{invoice.invoiceNumber} · {cust?.name || ""}</div>
+              </div>
+              <button onClick={() => setShowPayModal(false)} style={{ background:"none", border:"none", cursor:"pointer", padding:4 }}>
+                <X size={16} color={G.dim}/>
+              </button>
+            </div>
+
+            {/* Body */}
+            <div style={{ padding:"18px 24px", display:"flex", flexDirection:"column", gap:16 }}>
+              {/* Total highlight */}
+              <div style={{ background:`${G.green}08`, border:`1px solid ${G.green}25`, borderRadius:12, padding:"16px 18px", textAlign:"center" }}>
+                <div style={{ fontSize:11, fontWeight:700, color: G.dim, textTransform:"uppercase", letterSpacing:"0.05em", marginBottom:4 }}>{L("Amount Due", "Monto a Pagar")}</div>
+                <div style={{ fontSize:32, fontWeight:800, color: G.green, fontFamily: G.fontDisplay }}>${(invoice.total || 0).toFixed(2)}</div>
+              </div>
+
+              {/* Payment Method */}
+              <div>
+                <label style={{ fontSize:10, fontWeight:600, color: G.dim, textTransform:"uppercase", letterSpacing:"0.04em", display:"block", marginBottom:6 }}>{L("Payment Method", "Método de Pago")}</label>
+                <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+                  {payMethods.map(pm => {
+                    const sel = payForm.paymentMethod === pm.key;
+                    return (
+                      <div key={pm.key} onClick={() => setPayForm(p => ({ ...p, paymentMethod: pm.key }))}
+                        style={{ padding:"8px 14px", borderRadius:8, cursor:"pointer", fontSize:12, fontWeight:sel ? 700 : 500,
+                          border:`2px solid ${sel ? G.green : G.border}`,
+                          background: sel ? `${G.green}10` : "transparent",
+                          color: sel ? G.green : G.textSec, display:"flex", alignItems:"center", gap:5, transition:"all 0.15s" }}>
+                        <span style={{ fontSize:14 }}>{pm.icon}</span> {pm.label}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Payment Date */}
+              <div style={{ display:"flex", gap:12 }}>
+                <div style={{ flex:1 }}>
+                  <label style={{ fontSize:10, fontWeight:600, color: G.dim, textTransform:"uppercase", letterSpacing:"0.04em", display:"block", marginBottom:4 }}>{L("Payment Date", "Fecha de Pago")}</label>
+                  <input type="date" value={payForm.paidDate} onChange={e => setPayForm(p => ({ ...p, paidDate: e.target.value }))}
+                    style={{ width:"100%", padding:"9px 12px", borderRadius:8, border:`1px solid ${G.border}`, background: G.surface, color: G.text, fontSize:12, outline:"none", fontFamily: G.font, boxSizing:"border-box" }}/>
+                </div>
+                <div style={{ flex:1 }}>
+                  <label style={{ fontSize:10, fontWeight:600, color: G.dim, textTransform:"uppercase", letterSpacing:"0.04em", display:"block", marginBottom:4 }}>{L("Amount Received", "Monto Recibido")}</label>
+                  <div style={{ position:"relative" }}>
+                    <span style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)", fontSize:13, fontWeight:700, color: G.dim }}>$</span>
+                    <input value={payForm.amount} onChange={e => setPayForm(p => ({ ...p, amount: e.target.value }))}
+                      style={{ width:"100%", padding:"9px 12px 9px 22px", borderRadius:8, border:`1px solid ${G.border}`, background: G.surface, color: G.text, fontSize:12, fontWeight:700, outline:"none", fontFamily: G.font, boxSizing:"border-box" }}/>
+                  </div>
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label style={{ fontSize:10, fontWeight:600, color: G.dim, textTransform:"uppercase", letterSpacing:"0.04em", display:"block", marginBottom:4 }}>{L("Notes (optional)", "Notas (opcional)")}</label>
+                <input value={payForm.notes} onChange={e => setPayForm(p => ({ ...p, notes: e.target.value }))}
+                  placeholder={L("e.g. Zelle confirmation #1234", "ej. Confirmación Zelle #1234")}
+                  style={{ width:"100%", padding:"9px 12px", borderRadius:8, border:`1px solid ${G.border}`, background: G.surface, color: G.text, fontSize:12, outline:"none", fontFamily: G.font, boxSizing:"border-box" }}/>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div style={{ padding:"14px 24px 18px", borderTop:`1px solid ${G.borderLt}`, display:"flex", gap:10, justifyContent:"flex-end" }}>
+              <button onClick={() => setShowPayModal(false)}
+                style={{ padding:"10px 18px", borderRadius:8, border:`1px solid ${G.border}`, background:"transparent", color: G.textSec, fontSize:13, fontWeight:600, cursor:"pointer", fontFamily: G.font }}>
+                {L("Cancel", "Cancelar")}
+              </button>
+              <button onClick={confirmPay} disabled={payLoading}
+                style={{ padding:"10px 22px", borderRadius:8, border:"none", background: G.green, color:"#FFF", fontSize:13, fontWeight:700, cursor:"pointer", fontFamily: G.font, display:"flex", alignItems:"center", gap:6, opacity: payLoading ? 0.7 : 1 }}>
+                <CheckCircle size={14}/> {payLoading ? L("Saving...", "Guardando...") : L("Confirm Payment", "Confirmar Pago")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-
 
 /* ═════════════════════════════════════════════════════════════
    MAIN EXPORT

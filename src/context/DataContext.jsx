@@ -88,6 +88,18 @@ export function DataProvider({ children }) {
         });
         setInvoices(invoicesWithItems);
 
+        // Auto-mark overdue: sent invoices past due date
+        const today = new Date().toISOString().split("T")[0];
+        const overdueIds = invoicesWithItems
+          .filter(i => i.status === "sent" && i.dueDate && i.dueDate < today)
+          .map(i => i.id);
+        if (overdueIds.length > 0) {
+          setInvoices(prev => prev.map(i => overdueIds.includes(i.id) ? { ...i, status: "overdue" } : i));
+          overdueIds.forEach(id => {
+            supabase.from("invoices").update({ status: "overdue" }).eq("id", id).then(() => {});
+          });
+        }
+
       } catch (err) {
         console.error("DataContext load error:", err);
       } finally {
@@ -531,10 +543,18 @@ export function DataProvider({ children }) {
     await supabase.from("invoices").update({ status: "sent", sent_date: now }).eq("id", id);
   };
 
-  const markPaid = async (id) => {
+  const markPaid = async (id, paymentDetails = {}) => {
     const now = new Date().toISOString().split("T")[0];
-    setInvoices(p => p.map(i => i.id === id ? { ...i, status: "paid", paidDate: now } : i));
-    await supabase.from("invoices").update({ status: "paid", paid_date: now }).eq("id", id);
+    const updates = {
+      status: "paid",
+      paidDate: paymentDetails.paidDate || now,
+      paymentMethod: paymentDetails.paymentMethod || undefined,
+      notes: paymentDetails.notes || undefined,
+    };
+    // Clean undefined values
+    const cleanUpdates = Object.fromEntries(Object.entries(updates).filter(([_, v]) => v !== undefined));
+    setInvoices(p => p.map(i => i.id === id ? { ...i, ...cleanUpdates } : i));
+    await supabase.from("invoices").update(toSnake(cleanUpdates)).eq("id", id);
   };
 
   /* ══════════════════════════════════════════════
