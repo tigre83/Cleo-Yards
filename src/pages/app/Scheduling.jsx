@@ -1088,7 +1088,7 @@ export default function Scheduling({ dark, v, t, lang }) {
       const setF = (data) => setNewClientForm(p => ({ ...p, ...data }));
       
       const saveNewClient = () => {
-        if (!f.name || !f.email || !f.areaCode || !f.phone || !f.street || !f.city || !f.state || !f.zip) return;
+        if (!f.name || !f.email || !isValidEmail(f.email) || !f.areaCode || !f.phone || !f.street || !f.city || !f.state || !f.zip) return;
         const newCl = addClient({
           name: capitalize(f.name),
           email: f.email,
