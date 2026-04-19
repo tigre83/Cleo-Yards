@@ -342,6 +342,7 @@ export default function Scheduling({ dark, v, t, lang }) {
   
   const [showNewClient, setShowNewClient] = useState(false);
   const [toast, setToast] = useState(null);
+  const [jobFormError, setJobFormError] = useState(null);
   const [genConfirm, setGenConfirm] = useState(null);
   const [svcTab, setSvcTab] = useState("maintenance");
   const [newClientForm, setNewClientForm] = useState(null);
@@ -425,15 +426,27 @@ export default function Scheduling({ dark, v, t, lang }) {
 
   // ── Form handlers ──
   const openNewJob = (date) => {
-    setEditJob({ clientId: "", serviceIds: [], crewId: "", date: date || new Date().toISOString().split("T")[0], time: "08:00", duration: 1, notes: "", status: "assigned" });
+    const now = new Date();
+    const h = now.getHours();
+    const m = now.getMinutes();
+    const nextM = m < 30 ? 30 : 0;
+    const nextH = m < 30 ? h : h + 1;
+    const defaultTime = (nextH >= 6 && nextH <= 19) ? `${String(nextH).padStart(2, "0")}:${String(nextM).padStart(2, "0")}` : "08:00";
+    setEditJob({ clientId: "", serviceIds: [], crewId: "", date: date || new Date().toISOString().split("T")[0], time: defaultTime, duration: 1, notes: "", status: "assigned" });
     setView("form");
   };
   const openDetail = (job) => { setSelectedJob(job); setView("detail"); };
   const openEditJob = (job) => { setEditJob({ ...job }); setView("form"); };
-  const closeForm = () => { setView("week"); setEditJob(null); };
+  const closeForm = () => { setView("week"); setEditJob(null); setJobFormError(null); };
 
   const handleSaveJob = () => {
-    if (!editJob.clientId || !editJob.crewId || !editJob.date || !editJob.time) return;
+    const L = (en, es) => lang === "es" ? es : en;
+    if (!editJob.clientId) { setJobFormError(L("Please select a client", "Selecciona un cliente")); setTimeout(() => setJobFormError(null), 4000); return; }
+    if (!editJob.crewId) { setJobFormError(L("Please assign a crew", "Asigna una cuadrilla")); setTimeout(() => setJobFormError(null), 4000); return; }
+    const svcCount = (editJob.serviceIds || []).filter(s => typeof s === "object" ? s.qty > 0 : true).length;
+    if (svcCount === 0) { setJobFormError(L("Please add at least one service", "Agrega al menos un servicio")); setTimeout(() => setJobFormError(null), 4000); return; }
+    if (!editJob.date || !editJob.time) { setJobFormError(L("Please set date and time", "Configura fecha y hora")); setTimeout(() => setJobFormError(null), 4000); return; }
+    setJobFormError(null);
     if (editJob.id) {
       updateJob(editJob.id, editJob);
     } else {
@@ -909,6 +922,12 @@ export default function Scheduling({ dark, v, t, lang }) {
             {editJob.id ? L("Save Changes", "Guardar Cambios") : L("Create Job", "Crear Trabajo")}
           </button>
         </div>
+
+        {jobFormError && (
+          <div style={{ padding: "10px 16px", borderRadius: 8, background: "#FEF2F2", border: "1px solid #FECACA", color: "#DC2626", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 8, animation: "schToast 0.25s ease" }}>
+            <AlertTriangle size={14}/> {jobFormError}
+          </div>
+        )}
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 20, alignItems: "start" }}>
           {/* Left — Form */}
