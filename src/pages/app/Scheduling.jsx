@@ -1322,11 +1322,11 @@ export default function Scheduling({ dark, v, t, lang }) {
       {/* Week grid */}
       <div style={{ borderRadius: 14, border: "1px solid " + v.border, overflow: "hidden", background: v.cardBg }}>
         {/* Day headers */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", borderBottom: "1px solid " + v.border }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", borderBottom: "1px solid " + v.border }}>
           {weekDates.map((date, i) => {
             const today = isToday(date);
             return (
-              <div key={i} style={{ padding: "12px 14px", borderRight: i < 4 ? "1px solid " + v.border : "none", fontSize: 12, fontWeight: 700, color: today ? "#16A34A" : v.textSec, textTransform: "uppercase", letterSpacing: "0.04em", background: today ? (dark ? "rgba(22,163,74,0.06)" : "rgba(22,163,74,0.03)") : "transparent" }}>
+              <div key={i} style={{ padding: "12px 14px", borderRight: i < 6 ? "1px solid " + v.border : "none", fontSize: 12, fontWeight: 700, color: today ? "#16A34A" : v.textSec, textTransform: "uppercase", letterSpacing: "0.04em", background: today ? (dark ? "rgba(22,163,74,0.06)" : "rgba(22,163,74,0.03)") : "transparent" }}>
                 {fmtDayHeader(date, lang)}
                 <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 400, color: v.textSec }}>
                   ({jobs.filter(j => j.date === date).length})
@@ -1337,12 +1337,12 @@ export default function Scheduling({ dark, v, t, lang }) {
         </div>
 
         {/* Job cards */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", minHeight: 400 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", minHeight: 400 }}>
           {weekDates.map((date, dayIdx) => {
             const dayJobs = jobs.filter(j => j.date === date && j.status !== "rescheduled").sort((a, b) => a.time.localeCompare(b.time));
             const today = isToday(date);
             return (
-              <div key={dayIdx} style={{ borderRight: dayIdx < 4 ? "1px solid " + v.border : "none", padding: 8, background: today ? (dark ? "rgba(22,163,74,0.03)" : "rgba(22,163,74,0.015)") : "transparent" }}>
+              <div key={dayIdx} style={{ borderRight: dayIdx < 6 ? "1px solid " + v.border : "none", padding: 8, background: today ? (dark ? "rgba(22,163,74,0.03)" : "rgba(22,163,74,0.015)") : "transparent" }}>
                 {dayJobs.map(j => {
                   const st = statusConfig(j.status, lang);
                   const crew = crewMap[j.crewId];
