@@ -278,7 +278,7 @@ export function DataProvider({ children }) {
       const subtotal = jobSvcs.reduce((s, i) => s + i.qty * i.price, 0);
       const taxAmount = subtotal * (STATE_TAX / 100);
       
-      await addInvoice({
+      const newInv = await addInvoice({
         clientId: client.id,
         invoiceNumber: getNextInvoiceNumber(),
         date: new Date().toISOString().split("T")[0],
@@ -293,6 +293,17 @@ export function DataProvider({ children }) {
         paymentMethod: client.paymentMethod,
         items: jobSvcs,
       });
+
+      // Send invoice email
+      if (newInv?.id && client.email) {
+        try {
+          await fetch(`${EMAIL_API}/invoice`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ company: companyProfile, client, invoice: newInv, items: jobSvcs }),
+          });
+        } catch (err) { console.error("Auto-invoice email error:", err); }
+      }
     } else if (client.billingType === "monthly") {
       // Check if all jobs for this client this month are completed
       const jobDate = new Date(job.date + "T12:00:00");
@@ -330,7 +341,7 @@ export function DataProvider({ children }) {
         const taxAmount = subtotal * (STATE_TAX / 100);
         const monthName = jobDate.toLocaleDateString("en-US", { month: "long", year: "numeric" });
         
-        await addInvoice({
+        const newInv = await addInvoice({
           clientId: client.id,
           invoiceNumber: getNextInvoiceNumber(),
           date: new Date().toISOString().split("T")[0],
@@ -345,6 +356,17 @@ export function DataProvider({ children }) {
           paymentMethod: client.paymentMethod,
           items,
         });
+
+        // Send invoice email
+        if (newInv?.id && client.email) {
+          try {
+            await fetch(`${EMAIL_API}/invoice`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ company: companyProfile, client, invoice: newInv, items }),
+            });
+          } catch (err) { console.error("Auto-invoice email error:", err); }
+        }
       }
     }
 
