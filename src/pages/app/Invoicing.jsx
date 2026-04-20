@@ -929,9 +929,9 @@ function InvoiceDetail({ invoice, onBack, onEdit, clients, d, lang, companyProfi
             <div>
               <div style={{ fontSize:10, fontWeight:700, color: G.dim, textTransform:"uppercase", letterSpacing:"0.06em", marginBottom:8 }}>FROM</div>
               {companyProfile?.logo && (
-                <img src={companyProfile.logo} alt="Logo" style={{ width:48, height:48, objectFit:"contain", borderRadius:6, marginBottom:6 }}/>
+                <img src={companyProfile.logo} alt="Logo" style={{ width:72, height:72, objectFit:"contain", borderRadius:8, marginBottom:8, border:`1px solid ${G.borderLt}` }}/>
               )}
-              <div style={{ fontSize:14, fontWeight:700, color: G.text }}>{companyProfile?.name || "Your Company"}</div>
+              <div style={{ fontSize:15, fontWeight:800, color: G.text }}>{companyProfile?.name || "Your Company"}</div>
               <div style={{ fontSize:12, color: G.textSec, lineHeight:1.6, marginTop:4 }}>
                 {companyProfile?.address && <div>{companyProfile.address}</div>}
                 {(companyProfile?.city || companyProfile?.state || companyProfile?.zip) && (
@@ -1027,25 +1027,30 @@ function InvoiceDetail({ invoice, onBack, onEdit, clients, d, lang, companyProfi
 
           <div style={{ background: G.card, border:`1px solid ${G.borderLt}`, borderRadius: G.radius, padding:"16px 18px", boxShadow: G.shadow }}>
             <div style={{ fontSize:11, fontWeight:700, color: G.dim, textTransform:"uppercase", letterSpacing:"0.05em", marginBottom:12 }}>TIMELINE</div>
-            {[
-              { label: "Created", date: invoice.date, done: true },
-              { label: "Sent",    date: invoice.sentDate,    done: !!invoice.sentDate },
-              { label: "Due",     date: invoice.dueDate,   done: invoice.status === "paid" },
-              { label: "Paid",    date: invoice.paidDate,    done: invoice.status === "paid" },
-            ].map((step, i) => (
+            {(() => {
+              const isOverdue = invoice.status === "overdue" || (invoice.status === "sent" && dueDays !== null && dueDays < 0);
+              const isPaid = invoice.status === "paid";
+              const steps = [
+                { label: "Created", date: invoice.date, done: true, color: G.green },
+                { label: "Sent",    date: invoice.sentDate,    done: !!invoice.sentDate, color: G.green },
+                { label: "Due",     date: invoice.dueDate,   done: isPaid || isOverdue, color: isOverdue && !isPaid ? G.danger : G.green },
+                { label: "Paid",    date: invoice.paidDate,    done: isPaid, color: G.green },
+              ];
+              return steps.map((step, i) => (
               <div key={i} style={{ display:"flex", gap:12, paddingBottom: i < 3 ? 14 : 0, position:"relative" }}>
-                {i < 3 && <div style={{ position:"absolute", left:7, top:18, width:2, height:"calc(100% - 4px)", background: step.done ? `${G.green}30` : G.borderLt }}/>}
+                {i < 3 && <div style={{ position:"absolute", left:7, top:18, width:2, height:"calc(100% - 4px)", background: step.done ? `${step.color}30` : G.borderLt }}/>}
                 <div style={{ width:16, height:16, borderRadius:"50%", flexShrink:0, marginTop:1,
-                  background: step.done ? G.green : G.surface, border: step.done ? "none" : `2px solid ${G.border}`,
+                  background: step.done ? step.color : G.surface, border: step.done ? "none" : `2px solid ${G.border}`,
                   display:"flex", alignItems:"center", justifyContent:"center" }}>
-                  {step.done && <Check size={10} color="#FFF" strokeWidth={3}/>}
+                  {step.done && step.color === G.danger ? <AlertTriangle size={8} color="#FFF" strokeWidth={3}/> : step.done ? <Check size={10} color="#FFF" strokeWidth={3}/> : null}
                 </div>
                 <div>
-                  <div style={{ fontSize:12, fontWeight:600, color: step.done ? G.text : G.dim }}>{step.label}</div>
-                  <div style={{ fontSize:11, color: G.dim, marginTop:1 }}>{step.date ? fmtDate(step.date, "en") : "—"}</div>
+                  <div style={{ fontSize:12, fontWeight:600, color: step.done ? (step.color === G.danger ? G.danger : G.text) : G.dim }}>{step.label}</div>
+                  <div style={{ fontSize:11, color: step.color === G.danger && step.done ? G.danger : G.dim, fontWeight: step.color === G.danger && step.done ? 600 : 400, marginTop:1 }}>{step.date ? fmtDate(step.date, "en") : "—"}</div>
                 </div>
               </div>
-            ))}
+              ));
+            })()}
           </div>
 
           <div style={{ background: G.surface, border:`1px solid ${G.borderLt}`, borderRadius: G.radius, padding:"14px 16px" }}>
