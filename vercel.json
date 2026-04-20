@@ -1,5 +1,9 @@
 {
   "rewrites": [
-    { "source": "/((?!sitemap\\.xml|robots\\.txt|og-image\\.png|favicon\\.svg|icons\\.svg).*)", "destination": "/index.html" }
+    { "source": "/sitemap.xml", "destination": "/sitemap.xml" },
+    { "source": "/robots.txt", "destination": "/robots.txt" },
+    { "source": "/og-image.png", "destination": "/og-image.png" },
+    { "source": "/cleo-yards-logo.png", "destination": "/cleo-yards-logo.png" },
+    { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
