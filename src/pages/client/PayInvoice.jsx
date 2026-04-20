@@ -147,15 +147,15 @@ export default function PayInvoice() {
       <div style={{ background: G.surface, borderBottom: `1px solid ${G.border}`, padding: "16px 0" }}>
         <div style={{ maxWidth: 640, margin: "0 auto", padding: "0 20px", display: "flex", alignItems: "center", gap: 12 }}>
           {company?.logo ? (
-            <img src={company.logo} alt="" style={{ width: 52, height: 52, borderRadius: 10, objectFit: "contain", background: "#fff", border: "1px solid #E2E8F0" }}/>
+            <img src={company.logo} alt="" style={{ width: 72, height: 72, borderRadius: 12, objectFit: "contain", background: "#fff", border: "1px solid #E2E8F0" }}/>
           ) : (
-            <div style={{ width: 52, height: 52, borderRadius: 10, background: `linear-gradient(135deg, ${G.green}, ${G.greenLight})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: 800, color: "#fff" }}>
+            <div style={{ width: 72, height: 72, borderRadius: 12, background: `linear-gradient(135deg, ${G.green}, ${G.greenLight})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, fontWeight: 800, color: "#fff" }}>
               {(company?.name || "C").charAt(0)}
             </div>
           )}
           <div>
-            <div style={{ fontSize: 16, fontWeight: 800, color: G.text }}>{company?.name || "Cleo Yards"}</div>
-            <div style={{ fontSize: 11, color: G.dim }}>{company?.email || ""}</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: G.text }}>{company?.name || "Cleo Yards"}</div>
+            <div style={{ fontSize: 13, color: G.dim }}>{company?.email || ""}</div>
           </div>
         </div>
       </div>
