@@ -163,7 +163,10 @@ export function DataProvider({ children }) {
      ══════════════════════════════════════════════ */
   const addClient = async (client) => {
     const { services: svcList, ...clientData } = client;
-    const { data } = await supabase.from("clients").insert({ ...toSnake(clientData), company_id: COMPANY_ID }).select().single();
+    const cleaned = Object.fromEntries(
+      Object.entries(toSnake(clientData)).map(([k, v]) => [k, v === "" ? null : v])
+    );
+    const { data } = await supabase.from("clients").insert({ ...cleaned, company_id: COMPANY_ID }).select().single();
     if (data) {
       // Insert client_services
       if (svcList?.length) {
@@ -189,7 +192,11 @@ export function DataProvider({ children }) {
     setClients(p => p.map(c => c.id === id ? { ...c, ...updates } : c));
     
     const { createdAt, id: _, companyId, ...dbData } = clientData;
-    await supabase.from("clients").update(toSnake(dbData)).eq("id", id);
+    // Clean empty strings to null for date/uuid columns
+    const cleaned = Object.fromEntries(
+      Object.entries(toSnake(dbData)).map(([k, v]) => [k, v === "" ? null : v])
+    );
+    await supabase.from("clients").update(cleaned).eq("id", id);
     
     // Update client_services
     if (svcList) {
