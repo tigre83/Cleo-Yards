@@ -64,9 +64,17 @@ export default function PayInvoice() {
         const { data: iiData } = await supabase.from("invoice_items").select("*").eq("invoice_id", invoiceId);
         setItems((iiData || []).map(toCamel));
 
-        // Fetch company
-        const { data: comp } = await supabase.from("companies").select("*").eq("id", inv.company_id).single();
-        if (comp) setCompany(toCamel(comp));
+        // Fetch company (explicit columns including logo)
+        const { data: comp, error: compErr } = await supabase.from("companies").select("id,name,email,phone,address,city,state,zip,logo,area_code,phone_number").eq("id", inv.company_id).single();
+        if (comp) {
+          const compCamel = toCamel(comp);
+          setCompany(compCamel);
+          if (!compCamel.logo) {
+            // Retry fetching just the logo if it wasn't included
+            const { data: logoData } = await supabase.from("companies").select("logo").eq("id", inv.company_id).single();
+            if (logoData?.logo) setCompany(prev => ({ ...prev, logo: logoData.logo }));
+          }
+        }
 
         // Fetch client
         const { data: cl } = await supabase.from("clients").select("*").eq("id", inv.client_id).single();
@@ -139,10 +147,10 @@ export default function PayInvoice() {
       <div style={{ background: G.surface, borderBottom: `1px solid ${G.border}`, padding: "16px 0" }}>
         <div style={{ maxWidth: 640, margin: "0 auto", padding: "0 20px", display: "flex", alignItems: "center", gap: 12 }}>
           {company?.logo ? (
-            <img src={company.logo} alt="" style={{ width: 40, height: 40, borderRadius: 8, objectFit: "contain" }}/>
+            <img src={company.logo} alt="" style={{ width: 52, height: 52, borderRadius: 10, objectFit: "contain", background: "#fff", border: "1px solid #E2E8F0" }}/>
           ) : (
-            <div style={{ width: 40, height: 40, borderRadius: 8, background: `linear-gradient(135deg, ${G.green}, ${G.greenLight})`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <Leaf size={20} color="#fff"/>
+            <div style={{ width: 52, height: 52, borderRadius: 10, background: `linear-gradient(135deg, ${G.green}, ${G.greenLight})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: 800, color: "#fff" }}>
+              {(company?.name || "C").charAt(0)}
             </div>
           )}
           <div>
