@@ -63,7 +63,7 @@ export function DataProvider({ children }) {
         const { data: csData } = await supabase.from("client_services").select("*");
         const clientsWithSvc = (clientData || []).map(cl => {
           const clCamel = toCamel(cl);
-          const svcList = (csData || []).filter(cs => cs.client_id === cl.id).map(cs => ({ serviceId: cs.service_id, qty: cs.qty }));
+          const svcList = (csData || []).filter(cs => cs.client_id === cl.id).map(cs => ({ serviceId: cs.service_id, qty: cs.qty, customPrice: cs.custom_price != null ? Number(cs.custom_price) : null }));
           return { ...clCamel, services: svcList };
         });
         setClients(clientsWithSvc);
@@ -176,6 +176,7 @@ export function DataProvider({ children }) {
           client_id: data.id,
           service_id: typeof s === "object" ? s.serviceId : s,
           qty: typeof s === "object" ? s.qty : 1,
+          custom_price: typeof s === "object" ? (s.customPrice ?? null) : null,
         }));
         if (rows.length) await supabase.from("client_services").insert(rows);
       }
@@ -207,6 +208,7 @@ export function DataProvider({ children }) {
         client_id: id,
         service_id: typeof s === "object" ? s.serviceId : s,
         qty: typeof s === "object" ? s.qty : 1,
+        custom_price: typeof s === "object" ? (s.customPrice ?? null) : null,
       }));
       if (rows.length) await supabase.from("client_services").insert(rows);
     }
@@ -278,7 +280,11 @@ export function DataProvider({ children }) {
         const sid = typeof entry === "object" ? entry.serviceId : entry;
         const qty = typeof entry === "object" ? entry.qty || 1 : 1;
         const svc = services.find(s => s.id === sid);
-        return svc ? { serviceId: sid, name: svc.name, qty, price: svc.price } : null;
+        if (!svc) return null;
+        const clientEntry = (client.services || []).find(cs => (typeof cs === "object" ? cs.serviceId : cs) === sid);
+        const customPrice = clientEntry && typeof clientEntry === "object" ? clientEntry.customPrice : null;
+        const price = customPrice != null ? customPrice : svc.price;
+        return { serviceId: sid, name: svc.name, qty, price };
       }).filter(Boolean);
       
       const subtotal = jobSvcs.reduce((s, i) => s + i.qty * i.price, 0);
@@ -334,7 +340,12 @@ export function DataProvider({ children }) {
               allItems[sid].qty += qty;
             } else {
               const svc = services.find(s => s.id === sid);
-              if (svc) allItems[sid] = { serviceId: sid, name: svc.name, qty, price: svc.price };
+              if (svc) {
+                const clientEntry = (client.services || []).find(cs => (typeof cs === "object" ? cs.serviceId : cs) === sid);
+                const customPrice = clientEntry && typeof clientEntry === "object" ? clientEntry.customPrice : null;
+                const price = customPrice != null ? customPrice : svc.price;
+                allItems[sid] = { serviceId: sid, name: svc.name, qty, price };
+              }
             }
           });
         });
@@ -645,8 +656,20 @@ export function DataProvider({ children }) {
       const svc = typeof cs === "string" ? services.find(s => s.id === cs) : services.find(s => s.id === cs.serviceId);
       if (!svc) return null;
       const qty = typeof cs === "string" ? 1 : (cs.qty || 1);
-      return { ...svc, qty };
+      const customPrice = typeof cs === "object" ? cs.customPrice : null;
+      const price = customPrice != null ? customPrice : svc.price;
+      return { ...svc, qty, price, customPrice };
     }).filter(Boolean);
+  };
+  // FASE 2: resuelve el precio real de un servicio para un cliente puntual
+  // (custom_price si existe, si no cae al precio "sugerido" del catálogo)
+  const getClientServicePrice = (clientId, serviceId) => {
+    const client = clients.find(c => c.id === clientId);
+    const svc = services.find(s => s.id === serviceId);
+    if (!client) return svc?.price || 0;
+    const entry = (client.services || []).find(cs => (typeof cs === "object" ? cs.serviceId : cs) === serviceId);
+    const customPrice = entry && typeof entry === "object" ? entry.customPrice : null;
+    return customPrice != null ? customPrice : (svc?.price || 0);
   };
   const getClientMonthlyTotal = (clientId) => {
     return getClientServices(clientId).reduce((sum, s) => sum + s.price * (s.qty || 1), 0);
@@ -680,7 +703,7 @@ export function DataProvider({ children }) {
       addClient, updateClient,
       addInvoice, updateInvoice, sendInvoice, markPaid,
       getNextInvoiceNumber, getInvoicesByClient,
-      addNotification, getServiceById, getClientServices, getClientMonthlyTotal
+      addNotification, getServiceById, getClientServices, getClientServicePrice, getClientMonthlyTotal
     }}>
       {children}
     </DataContext.Provider>

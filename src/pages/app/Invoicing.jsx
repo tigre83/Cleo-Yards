@@ -522,6 +522,7 @@ function InvoiceList({ invoices, onNew, onView, clients, d, lang }) {
    ═════════════════════════════════════════════════════════════ */
 function InvoiceForm({ onCancel, onSave, clients, services, editInvoice, d, lang }) {
   // FASE 1: STATE_TAX and calculateInvoice removed
+  const { getClientServicePrice } = useData();
 
   const [form, setForm] = useState(() => {
     if (editInvoice) return { ...editInvoice };
@@ -555,7 +556,9 @@ function InvoiceForm({ onCancel, onSave, clients, services, editInvoice, d, lang
   const applyService = (itemId, serviceId) => {
     const svc = (services || []).find(s => s.id === serviceId);
     if (!svc) return;
-    setForm(p => ({ ...p, items: p.items.map(it => it.id === itemId ? { ...it, serviceId, name: lang === "es" && svc.nameEs ? svc.nameEs : svc.name, price: svc.price || 0 } : it) }));
+    // FASE 2: si hay cliente seleccionado, usar su precio custom en vez del catálogo
+    const price = form.clientId && getClientServicePrice ? getClientServicePrice(form.clientId, serviceId) : (svc.price || 0);
+    setForm(p => ({ ...p, items: p.items.map(it => it.id === itemId ? { ...it, serviceId, name: lang === "es" && svc.nameEs ? svc.nameEs : svc.name, price } : it) }));
   };
 
   const calc = useMemo(() => {

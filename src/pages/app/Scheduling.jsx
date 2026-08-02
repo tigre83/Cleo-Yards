@@ -324,7 +324,7 @@ const CYTimePicker = ({ value, onChange, v, dark, lang, style }) => {
 };
 
 export default function Scheduling({ dark, v, t, lang }) {
-  const { jobs, crews, clients, services, getJobsByDate, addJob, updateJob, deleteJob, addClient, generateMonthlyJobs, completeJob, cancelJob, startJob, reassignJob, toggleServiceComplete } = useData();
+  const { jobs, crews, clients, services, getJobsByDate, addJob, updateJob, deleteJob, addClient, generateMonthlyJobs, completeJob, cancelJob, startJob, reassignJob, toggleServiceComplete, getClientServicePrice } = useData();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin" || user?.role === "business";
   const s = t.sched;
@@ -471,7 +471,7 @@ export default function Scheduling({ dark, v, t, lang }) {
     const svcNames = (job.serviceIds || []).map(entry => {
       const sid = typeof entry === "object" ? entry.serviceId : entry;
       const svc = (services || []).find(s => s.id === sid);
-      return svc ? { serviceId: sid, name: lang === "es" && svc.nameEs ? svc.nameEs : svc.name, price: svc.price, qty: typeof entry === "object" ? entry.qty || 1 : 1 } : null;
+      return svc ? { serviceId: sid, name: lang === "es" && svc.nameEs ? svc.nameEs : svc.name, price: getClientServicePrice(job.clientId, sid), qty: typeof entry === "object" ? entry.qty || 1 : 1 } : null;
     }).filter(Boolean);
 
     const fmtJobTime = (t) => {
@@ -525,7 +525,7 @@ export default function Scheduling({ dark, v, t, lang }) {
                 const sid = typeof entry === "object" ? entry.serviceId : entry;
                 const svc = (services || []).find(s => s.id === sid);
                 const qty = typeof entry === "object" ? entry.qty || 1 : 1;
-                return svc ? { serviceId: sid, name: lang === "es" && svc.nameEs ? svc.nameEs : svc.name, price: svc.price, qty, done: cs.includes(sid) } : null;
+                return svc ? { serviceId: sid, name: lang === "es" && svc.nameEs ? svc.nameEs : svc.name, price: getClientServicePrice(job.clientId, sid), qty, done: cs.includes(sid) } : null;
               }).filter(Boolean);
               setSummaryData({ done: allSvcs.filter(s => s.done), pending: allSvcs.filter(s => !s.done), allDone: allSvcs.every(s => s.done), clientName: clientMap[job.clientId]?.name || "—", date: job.date });
             }}
@@ -996,7 +996,7 @@ export default function Scheduling({ dark, v, t, lang }) {
                         <button onClick={() => updateQty(qty + 1)}
                           style={{ width: 22, height: 22, borderRadius: 4, border: "1px solid " + cc + "40", background: cc + "08", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: cc, fontWeight: 700 }}>+</button>
                       </div>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: sel ? cc : v.textSec, minWidth: 55, textAlign: "right" }}>{sel ? "$" + (svc.price * qty) : "$" + svc.price}</span>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: sel ? cc : v.textSec, minWidth: 55, textAlign: "right" }}>{sel ? "$" + (getClientServicePrice(editJob.clientId, svc.id) * qty) : "$" + svc.price}</span>
                     </div>
                   );
                 })}
