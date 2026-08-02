@@ -241,9 +241,7 @@ export default function PayInvoice() {
               <div style={{ display: "flex", justifyContent: "space-between", width: 200, fontSize: 12, color: G.textSec }}>
                 <span>Subtotal</span><span>${(invoice.subtotal || 0).toFixed(2)}</span>
               </div>
-              <div style={{ display: "flex", justifyContent: "space-between", width: 200, fontSize: 12, color: G.textSec }}>
-                <span>Tax ({(invoice.taxRate || 6.25).toFixed(2)}%)</span><span>${(invoice.taxAmount || 0).toFixed(2)}</span>
-              </div>
+              {/* FASE 1: Tax row removed per elm feedback */}
               {(invoice.discountAmt > 0) && (
                 <div style={{ display: "flex", justifyContent: "space-between", width: 200, fontSize: 12, color: G.green }}>
                   <span>Discount</span><span>-${(invoice.discountAmt || 0).toFixed(2)}</span>

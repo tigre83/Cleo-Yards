@@ -241,9 +241,8 @@ const generateInvoicePDFDoc = (invoice, client, companyProfile) => {
   const totalsX = rightCol - 180;
   const totalsValX = rightCol;
   const subtotal = invoice.subtotal || 0;
-  const taxAmt = invoice.taxAmount || 0;
   const total = invoice.total || 0;
-  const taxRate = invoice.taxRate || 6.25;
+  // FASE 1: Tax removed from invoice PDF
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
@@ -260,12 +259,6 @@ const generateInvoicePDFDoc = (invoice, client, companyProfile) => {
     doc.text("-$" + invoice.discountAmt.toFixed(2), totalsValX, y, { align: "right" });
     y += 16;
   }
-
-  doc.setTextColor(...gray);
-  doc.text("Tax (" + taxRate + "%)", totalsX, y);
-  doc.setTextColor(...dark);
-  doc.text("$" + taxAmt.toFixed(2), totalsValX, y, { align: "right" });
-  y += 6;
 
   doc.setDrawColor(226, 232, 228);
   doc.line(totalsX, y, rightCol, y);
@@ -528,7 +521,7 @@ function InvoiceList({ invoices, onNew, onView, clients, d, lang }) {
    VIEW 2 — CREATE / EDIT INVOICE
    ═════════════════════════════════════════════════════════════ */
 function InvoiceForm({ onCancel, onSave, clients, services, editInvoice, d, lang }) {
-  const { STATE_TAX, calculateInvoice } = useData();
+  // FASE 1: STATE_TAX and calculateInvoice removed
 
   const [form, setForm] = useState(() => {
     if (editInvoice) return { ...editInvoice };
@@ -569,14 +562,10 @@ function InvoiceForm({ onCancel, onSave, clients, services, editInvoice, d, lang
     const items = form.items || [];
     const subtotal = items.reduce((s, it) => s + (it.qty || 0) * (it.price || 0), 0);
     const discountAmt = form.discount_type === "percent" ? subtotal * ((form.discount || 0) / 100) : (form.discount || 0);
-    const taxable = subtotal - discountAmt;
-    let taxRate = 0;
-    if (form.clientId && calculateInvoice) {
-      try { taxRate = calculateInvoice(form.clientId, items).taxRate || 0; } catch(e) {}
-    }
-    const taxAmount = form.clientId ? Math.round(taxable * taxRate) / 100 : 0;
-    return { subtotal, discountAmt, taxable, tax: taxAmount, taxRate, total: taxable + taxAmount };
-  }, [form.items, form.discount, form.discount_type, form.clientId, calculateInvoice]);
+    const total = subtotal - discountAmt;
+    // FASE 1: Tax removed per elm feedback
+    return { subtotal, discountAmt, tax: 0, taxRate: 0, total };
+  }, [form.items, form.discount, form.discount_type]);
 
   const [formError, setFormError] = useState("");
 
@@ -788,7 +777,7 @@ function InvoiceForm({ onCancel, onSave, clients, services, editInvoice, d, lang
                 <span>{d.subtotal} ({form.items.length} {form.items.length !== 1 ? d.items : d.item})</span>
                 <span style={{ fontWeight:600 }}>{fmt(calc.subtotal)}</span>
               </div>
-              <div style={{ display:"flex", alignItems:"center", gap:8, paddingBottom:10, borderBottom:`1px solid ${G.borderLt}` }}>
+              <div style={{ display:"flex", alignItems:"center", gap:8, paddingBottom:10 }}>
                 <span style={{ fontSize:12, color: G.dim, whiteSpace:"nowrap" }}>{d.discount}</span>
                 <input type="number" min="0" value={form.discount} onChange={e => setField("discount", +e.target.value || 0)}
                   style={{ ...sInput, width:60, padding:"5px 6px", fontSize:12, textAlign:"center" }}/>
@@ -799,13 +788,8 @@ function InvoiceForm({ onCancel, onSave, clients, services, editInvoice, d, lang
                 </select>
                 <span style={{ fontSize:12, color: G.danger, fontWeight:600, marginLeft:"auto" }}>−{fmt(calc.discountAmt)}</span>
               </div>
-              <div style={{ display:"flex", justifyContent:"space-between", fontSize:13, color: G.textSec }}>
-                <span>{d.taxableAmount}</span><span>{fmt(calc.taxable)}</span>
-              </div>
-              <div style={{ display:"flex", justifyContent:"space-between", fontSize:13, color: G.textSec, paddingBottom:12, borderBottom:`1px solid ${G.borderLt}` }}>
-                <span>{d.tax} ({(calc.taxRate || 6.25).toFixed(2)}%)</span><span>{fmt(calc.tax)}</span>
-              </div>
-              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"4px 0" }}>
+              {/* FASE 1: Taxable amount and tax rows removed */}
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"4px 0", borderTop:`1px solid ${G.borderLt}`, paddingTop:10 }}>
                 <span style={{ fontSize:15, fontWeight:800, color: G.text, fontFamily: G.fontDisplay }}>{d.total}</span>
                 <span style={{ fontSize:22, fontWeight:800, color: G.green, fontFamily: G.fontDisplay }}>{fmt(calc.total)}</span>
               </div>
@@ -829,7 +813,7 @@ function InvoiceForm({ onCancel, onSave, clients, services, editInvoice, d, lang
    VIEW 3 — INVOICE DETAIL
    ═════════════════════════════════════════════════════════════ */
 function InvoiceDetail({ invoice, onBack, onEdit, clients, d, lang, companyProfile }) {
-  const { sendInvoice, markPaid, STATE_TAX } = useData();
+  const { sendInvoice, markPaid } = useData();
   const [menuOpen, setMenuOpen] = useState(false);
   const [showPayModal, setShowPayModal] = useState(false);
   const [payForm, setPayForm] = useState({ paidDate: "", paymentMethod: "zelle", amount: "", notes: "" });
@@ -846,7 +830,7 @@ function InvoiceDetail({ invoice, onBack, onEdit, clients, d, lang, companyProfi
   if (!invoice) return null;
   const cust = (clients || []).find(c => c.id === invoice.clientId);
   const dueDays = daysDiff(invoice.dueDate);
-  const taxRate = (invoice.taxRate || 6.25).toFixed(2);
+  // FASE 1: taxRate removed
   const handleSend = async () => { if (sendInvoice) await sendInvoice(invoice.id); };
   const openPayModal = () => {
     setPayForm({
@@ -994,10 +978,6 @@ function InvoiceDetail({ invoice, onBack, onEdit, clients, d, lang, companyProfi
                   <span style={{ fontSize:13, fontWeight:600, color: G.danger, textAlign:"right" }}>−{fmt(invoice.discountAmt)}</span>
                 </div>
               )}
-              <div style={{ display:"grid", gridTemplateColumns:"120px 100px", gap:4 }}>
-                <span style={{ fontSize:12, color: G.dim, textAlign:"right" }}>Tax ({taxRate}%)</span>
-                <span style={{ fontSize:13, fontWeight:600, color: G.text, textAlign:"right" }}>{fmt(invoice.taxAmount)}</span>
-              </div>
               <div style={{ display:"grid", gridTemplateColumns:"120px 100px", gap:4, paddingTop:8, borderTop:`1px solid ${G.border}` }}>
                 <span style={{ fontSize:14, fontWeight:800, color: G.text, textAlign:"right", fontFamily: G.fontDisplay }}>Total</span>
                 <span style={{ fontSize:18, fontWeight:800, color: G.green, textAlign:"right", fontFamily: G.fontDisplay }}>{fmt(invoice.total)}</span>

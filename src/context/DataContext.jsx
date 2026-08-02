@@ -3,7 +3,6 @@ import { supabase } from "../lib/supabase";
 
 const DataContext = createContext(null);
 const COMPANY_ID = "00000000-0000-0000-0000-000000000001";
-const STATE_TAX = 6.25;
 const EMAIL_API = "https://cleo-yards-emails-production.up.railway.app/api/emails";
 
 /* ── Snake ↔ Camel converters ── */
@@ -283,7 +282,6 @@ export function DataProvider({ children }) {
       }).filter(Boolean);
       
       const subtotal = jobSvcs.reduce((s, i) => s + i.qty * i.price, 0);
-      const taxAmount = subtotal * (STATE_TAX / 100);
       
       const newInv = await addInvoice({
         clientId: client.id,
@@ -293,9 +291,7 @@ export function DataProvider({ children }) {
         status: "sent",
         sentDate: new Date().toISOString().split("T")[0],
         subtotal,
-        taxRate: STATE_TAX,
-        taxAmount,
-        total: subtotal + taxAmount,
+        total: subtotal,
         notes: "Service completed " + job.date,
         paymentMethod: client.paymentMethod,
         items: jobSvcs,
@@ -345,7 +341,6 @@ export function DataProvider({ children }) {
         
         const items = Object.values(allItems);
         const subtotal = items.reduce((s, i) => s + i.qty * i.price, 0);
-        const taxAmount = subtotal * (STATE_TAX / 100);
         const monthName = jobDate.toLocaleDateString("en-US", { month: "long", year: "numeric" });
         
         const newInv = await addInvoice({
@@ -356,9 +351,7 @@ export function DataProvider({ children }) {
           status: "sent",
           sentDate: new Date().toISOString().split("T")[0],
           subtotal,
-          taxRate: STATE_TAX,
-          taxAmount,
-          total: subtotal + taxAmount,
+          total: subtotal,
           notes: monthName + " services",
           paymentMethod: client.paymentMethod,
           items,
@@ -377,29 +370,30 @@ export function DataProvider({ children }) {
       }
     }
 
-    // Send job completion email (informational, no prices)
-    try {
-      if (client?.email) {
-        const jobSvcNames = (job.serviceIds || []).map(entry => {
-          const sid = typeof entry === "object" ? entry.serviceId : entry;
-          const svc = services.find(s => s.id === sid);
-          return svc ? { name: svc.name } : null;
-        }).filter(Boolean);
+    // FASE 1: Disabled job completion email to customer
+    // Elm prefers to notify clients only on final billing day (no intra-month notifications)
+    // try {
+    //   if (client?.email) {
+    //     const jobSvcNames = (job.serviceIds || []).map(entry => {
+    //       const sid = typeof entry === "object" ? entry.serviceId : entry;
+    //       const svc = services.find(s => s.id === sid);
+    //       return svc ? { name: svc.name } : null;
+    //     }).filter(Boolean);
 
-        await fetch(`${EMAIL_API}/job-complete`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            company: companyProfile,
-            client,
-            job: { ...job, status: "completed" },
-            services: jobSvcNames,
-          }),
-        });
-      }
-    } catch (err) {
-      console.error("Job complete email error:", err);
-    }
+    //     await fetch(`${EMAIL_API}/job-complete`, {
+    //       method: "POST",
+    //       headers: { "Content-Type": "application/json" },
+    //       body: JSON.stringify({
+    //         company: companyProfile,
+    //         client,
+    //         job: { ...job, status: "completed" },
+    //         services: jobSvcNames,
+    //       }),
+    //     });
+    //   }
+    // } catch (err) {
+    //   console.error("Job complete email error:", err);
+    // }
   };
   const cancelJob = (id) => updateJob(id, { status: "cancelled" });
 
@@ -636,16 +630,10 @@ export function DataProvider({ children }) {
   /* ══════════════════════════════════════════════
      HELPERS
      ══════════════════════════════════════════════ */
-  const getStateTax = () => STATE_TAX;
-  const getClientState = (clientId) => {
-    const cl = clients.find(c => c.id === clientId);
-    return cl ? STATE_TAX : STATE_TAX;
-  };
-  const calculateInvoice = (items, taxRate) => {
-    const subtotal = items.reduce((s, i) => s + (i.qty || 1) * (i.price || 0), 0);
-    const taxAmount = subtotal * (taxRate / 100);
-    return { subtotal, taxAmount, total: subtotal + taxAmount };
-  };
+  // FASE 1: Removed tax-related helper functions
+  // const getStateTax = () => STATE_TAX;
+  // const getClientState = (clientId) => { ... };
+  // const calculateInvoice = (items, taxRate) => { ... };
   const getInvoicesByClient = (clientId) => invoices.filter(i => i.clientId === clientId);
   const getNextJobId = () => "auto";
 
@@ -684,14 +672,14 @@ export function DataProvider({ children }) {
 
   return (
     <DataContext.Provider value={{
-      companyProfile, updateCompanyProfile, crews, jobs, services, clients, invoices, notifications, STATE_TAX,
+      companyProfile, updateCompanyProfile, crews, jobs, services, clients, invoices, notifications,
       addCrew, updateCrew,
       addJob, updateJob, deleteJob, getJobsByDate, getJobsByCrew, getJobsByClient, getJobsByWeek,
       completeJob, cancelJob, startJob, reassignJob, getNextJobId, generateMonthlyJobs, toggleServiceComplete,
       addService, updateService,
       addClient, updateClient,
       addInvoice, updateInvoice, sendInvoice, markPaid,
-      getNextInvoiceNumber, getStateTax, getClientState, calculateInvoice, getInvoicesByClient,
+      getNextInvoiceNumber, getInvoicesByClient,
       addNotification, getServiceById, getClientServices, getClientMonthlyTotal
     }}>
       {children}
