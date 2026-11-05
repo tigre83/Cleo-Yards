@@ -568,28 +568,11 @@ export function DataProvider({ children }) {
     return true;
   };
 
-  // Envía el correo de una factura ya guardada. Devuelve true/false.
-  const sendInvoiceEmail = async (inv) => {
-    const client = clients.find(c => c.id === inv.clientId);
-    if (!client?.email) return false;
-    try {
-      const res = await fetch(`${EMAIL_API}/invoice`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ company: companyProfile, client, invoice: inv, items: inv.items || [] }),
-      });
-      return res.ok;
-    } catch (err) {
-      console.error("Email send error:", err);
-      return false;
-    }
-  };
-
   // Envía el correo de una factura. Solo la marca como "enviada" si el correo
   // de verdad salió, y solo si era borrador (reenviar NO cambia el estado de
   // una factura ya enviada o pagada). Devuelve { ok, error?, resent?, to? }.
-  const sendInvoice = async (id) => {
-    const inv = invoices.find(i => i.id === id);
+  const sendInvoice = async (id, invOverride) => {
+    const inv = invOverride || invoices.find(i => i.id === id);
     if (!inv) return { ok: false, error: "not_found" };
     const client = clients.find(c => c.id === inv.clientId);
     if (!client) return { ok: false, error: "no_client" };
@@ -600,7 +583,7 @@ export function DataProvider({ children }) {
     const now = new Date().toISOString().split("T")[0];
     const outgoing = wasDraft ? { ...inv, status: "sent", sentDate: now } : inv;
 
-    let emailed = false;
+    let emailed = false, detail = "";
     try {
       const res = await fetch(`${EMAIL_API}/invoice`, {
         method: "POST",
@@ -608,10 +591,16 @@ export function DataProvider({ children }) {
         body: JSON.stringify({ company: companyProfile, client, invoice: outgoing, items: inv.items || [] }),
       });
       emailed = res.ok;
+      if (!res.ok) {
+        const j = await res.json().catch(() => null);
+        detail = (j && j.error) ? String(j.error) : `HTTP ${res.status}`;
+        console.error("El servidor de correos rechazó el envío:", res.status, detail);
+      }
     } catch (err) {
+      detail = err.message || "sin conexión con el servidor de correos";
       console.error("Email send error:", err);
     }
-    if (!emailed) return { ok: false, error: "email_failed" };
+    if (!emailed) return { ok: false, error: "email_failed", detail };
 
     if (wasDraft) {
       setInvoices(p => p.map(i => i.id === id ? { ...i, status: "sent", sentDate: now } : i));
@@ -691,7 +680,7 @@ export function DataProvider({ children }) {
       completeJob, cancelJob, startJob, reassignJob, getNextJobId, generateMonthlyJobs, toggleServiceComplete,
       addService, updateService,
       addClient, updateClient,
-      addInvoice, updateInvoice, sendInvoice, sendInvoiceEmail, markPaid,
+      addInvoice, updateInvoice, sendInvoice, markPaid,
       getNextInvoiceNumber, getInvoicesByClient,
       addNotification, getServiceById, getClientServices, getClientMonthlyTotal
     }}>

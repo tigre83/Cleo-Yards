@@ -823,6 +823,14 @@ function InvoiceForm({ onCancel, onSave, clients, services, editInvoice, d, lang
 /* ═════════════════════════════════════════════════════════════
    VIEW 3 — INVOICE DETAIL
    ═════════════════════════════════════════════════════════════ */
+// Mensaje claro según POR QUÉ falló el envío del correo
+const sendFailMsg = (r, L) => ({
+  no_client: L("This invoice has no client. Click Edit and pick one first.", "Esta factura no tiene cliente. Pulsa Editar y elige uno primero."),
+  no_email: L("This client has no email. Add it in Clients and try again.", "Este cliente no tiene correo. Agrégalo en Clientes e intenta de nuevo."),
+  no_due_date: L("Add a due date (Edit) before sending.", "Agrega una fecha de vencimiento (Editar) antes de enviar."),
+  email_failed: L("The email could not be sent", "No se pudo enviar el correo") + (r.detail ? ` — ${r.detail}` : "") + ". " + L("The invoice was NOT marked as sent.", "La factura NO se marcó como enviada."),
+}[r.error] || L("The email could not be sent.", "No se pudo enviar el correo."));
+
 function InvoiceDetail({ invoice, onBack, onEdit, clients, d, lang, companyProfile }) {
   const { sendInvoice, markPaid } = useData();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -849,14 +857,8 @@ function InvoiceDetail({ invoice, onBack, onEdit, clients, d, lang, companyProfi
     setSending(true);
     const r = sendInvoice ? await sendInvoice(invoice.id) : { ok: false, error: "email_failed" };
     setSending(false);
-    const bad = {
-      no_client: L("This invoice has no client. Click Edit and pick one first.", "Esta factura no tiene cliente. Pulsa Editar y elige uno primero."),
-      no_email: L("This client has no email. Add it in Clients and try again.", "Este cliente no tiene correo. Agrégalo en Clientes e intenta de nuevo."),
-      no_due_date: L("Add a due date (Edit) before sending.", "Agrega una fecha de vencimiento (Editar) antes de enviar."),
-      email_failed: L("The email could not be sent. The invoice was NOT marked as sent — try again.", "No se pudo enviar el correo. La factura NO se marcó como enviada — intenta de nuevo."),
-    };
     if (r.ok) flashToast((r.resent ? L("Email sent again to ", "Correo reenviado a ") : L("Invoice sent to ", "Factura enviada a ")) + r.to);
-    else flashToast(bad[r.error] || bad.email_failed, "error");
+    else flashToast(sendFailMsg(r, L), "error");
   };
   const openPayModal = () => {
     setPayForm({
@@ -1173,7 +1175,7 @@ function InvoiceDetail({ invoice, onBack, onEdit, clients, d, lang, companyProfi
    MAIN EXPORT
    ═════════════════════════════════════════════════════════════ */
 export default function Invoicing({ dark, v, t, lang }) {
-  const { invoices, clients, services, addInvoice, updateInvoice, sendInvoiceEmail, companyProfile } = useData();
+  const { invoices, clients, services, addInvoice, updateInvoice, sendInvoice, companyProfile } = useData();
   const d = t.inv;
 
   const [view, setView] = useState("list");
@@ -1194,31 +1196,35 @@ export default function Invoicing({ dark, v, t, lang }) {
 
   // Solo muestra "guardado" si la base de datos de verdad lo guardó; si falla,
   // te deja en el formulario con tu trabajo intacto y un aviso rojo.
+  // "Guardar y enviar": primero se guarda como BORRADOR, luego se manda el correo y solo si
+  // salió se marca como "enviada". Así nunca queda "enviada" una factura que nadie recibió.
+  // Editar una factura ya enviada/pagada nunca cambia su estado.
   const handleSave = async (invoiceData) => {
     const L = (en, es) => lang === "es" ? es : en;
-    const today = new Date().toISOString().split("T")[0];
     const isEdit = view === "edit" && liveSelected?.id;
-    const sending = invoiceData.status === "sent";
+    const wantsSend = invoiceData.status === "sent";
+    const keepStatus = isEdit && liveSelected.status !== "draft";
+    const status = keepStatus ? liveSelected.status : "draft";
     const failMsg = L("Couldn't save the invoice. Nothing was lost — try again.", "No se pudo guardar la factura. No perdiste nada — intenta de nuevo.");
 
     let saved;
+    const payload = { ...invoiceData, status };
     if (isEdit) {
-      const payload = sending && !liveSelected.sentDate ? { ...invoiceData, sentDate: today } : invoiceData;
       const ok = updateInvoice ? await updateInvoice(liveSelected.id, payload) : false;
       if (!ok) { showToast(failMsg, "error"); return; }
       saved = { ...liveSelected, ...payload };
     } else {
-      saved = addInvoice ? await addInvoice(sending ? { ...invoiceData, sentDate: today } : invoiceData) : null;
+      saved = addInvoice ? await addInvoice(payload) : null;
       if (!saved) { showToast(failMsg, "error"); return; }
     }
 
-    // "Guardar y enviar" tiene que enviar el correo de verdad (solo si antes era borrador o nueva)
-    if (sending && (!isEdit || liveSelected.status === "draft")) {
-      const emailed = sendInvoiceEmail ? await sendInvoiceEmail(saved) : false;
-      showToast(emailed
-        ? L("Invoice created & emailed", "Factura creada y enviada por correo")
-        : L("Invoice saved, but the email was NOT sent (does the client have an email?)", "Factura guardada, pero el correo NO se envió (¿el cliente tiene email?)"),
-        emailed ? "success" : "error");
+    if (wantsSend) {
+      const r = sendInvoice ? await sendInvoice(saved.id, saved) : { ok: false, error: "email_failed" };
+      if (r.ok) {
+        showToast((r.resent ? L("Saved. Email sent again to ", "Guardada. Correo reenviado a ") : L("Invoice sent to ", "Factura enviada a ")) + r.to);
+      } else {
+        showToast((keepStatus ? L("Saved. ", "Guardada. ") : L("Saved as DRAFT. ", "Guardada como BORRADOR. ")) + sendFailMsg(r, L), "error");
+      }
     } else {
       showToast(isEdit ? L("Invoice updated", "Factura actualizada") : L("Draft saved", "Borrador guardado"));
     }
