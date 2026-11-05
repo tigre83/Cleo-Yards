@@ -30,6 +30,9 @@ const toSnake = (obj) => {
 export function DataProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [companyProfile, setCompanyProfile] = useState({ profileComplete: false });
+  // El perfil de la empresa trae el logo como una imagen en texto (cientos de KB) y el servidor de
+  // correos rechaza peticiones grandes (HTTP 413). Al correo solo viajan los datos que realmente usa.
+  const emailCompany = () => ({ name: companyProfile.name, address: companyProfile.address, email: companyProfile.email, phone: companyProfile.phone });
   const [crews, setCrews] = useState([]);
   const [services, setServices] = useState([]);
   const [clients, setClients] = useState([]);
@@ -320,7 +323,7 @@ export function DataProvider({ children }) {
           await fetch(`${EMAIL_API}/invoice`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ company: companyProfile, client, invoice: newInv, items: jobSvcs }),
+            body: JSON.stringify({ company: emailCompany(), client, invoice: newInv, items: jobSvcs }),
           });
         } catch (err) { console.error("Auto-invoice email error:", err); }
       }
@@ -588,7 +591,7 @@ export function DataProvider({ children }) {
       const res = await fetch(`${EMAIL_API}/invoice`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ company: companyProfile, client, invoice: outgoing, items: inv.items || [] }),
+        body: JSON.stringify({ company: emailCompany(), client, invoice: outgoing, items: inv.items || [] }),
       });
       emailed = res.ok;
       if (!res.ok) {
