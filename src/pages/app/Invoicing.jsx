@@ -830,7 +830,9 @@ function InvoiceDetail({ invoice, onBack, onEdit, clients, d, lang, companyProfi
   const [payForm, setPayForm] = useState({ paidDate: "", paymentMethod: "zelle", amount: "", notes: "" });
   const [payLoading, setPayLoading] = useState(false);
   const [payToast, setPayToast] = useState(null);
+  const [sending, setSending] = useState(false);
   const menuRef = useRef(null);
+  const flashToast = (msg, type = "success") => { setPayToast({ msg, type }); setTimeout(() => setPayToast(null), type === "success" ? 3500 : 7000); };
 
   useEffect(() => {
     const close = (e) => { if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false); };
@@ -842,7 +844,20 @@ function InvoiceDetail({ invoice, onBack, onEdit, clients, d, lang, companyProfi
   const cust = (clients || []).find(c => c.id === invoice.clientId);
   const dueDays = daysDiff(invoice.dueDate);
   // FASE 1: taxRate removed
-  const handleSend = async () => { if (sendInvoice) await sendInvoice(invoice.id); };
+  const handleSend = async () => {
+    if (sending) return;
+    setSending(true);
+    const r = sendInvoice ? await sendInvoice(invoice.id) : { ok: false, error: "email_failed" };
+    setSending(false);
+    const bad = {
+      no_client: L("This invoice has no client. Click Edit and pick one first.", "Esta factura no tiene cliente. Pulsa Editar y elige uno primero."),
+      no_email: L("This client has no email. Add it in Clients and try again.", "Este cliente no tiene correo. Agrégalo en Clientes e intenta de nuevo."),
+      no_due_date: L("Add a due date (Edit) before sending.", "Agrega una fecha de vencimiento (Editar) antes de enviar."),
+      email_failed: L("The email could not be sent. The invoice was NOT marked as sent — try again.", "No se pudo enviar el correo. La factura NO se marcó como enviada — intenta de nuevo."),
+    };
+    if (r.ok) flashToast((r.resent ? L("Email sent again to ", "Correo reenviado a ") : L("Invoice sent to ", "Factura enviada a ")) + r.to);
+    else flashToast(bad[r.error] || bad.email_failed, "error");
+  };
   const openPayModal = () => {
     setPayForm({
       paidDate: new Date().toISOString().split("T")[0],
@@ -861,8 +876,7 @@ function InvoiceDetail({ invoice, onBack, onEdit, clients, d, lang, companyProfi
     });
     setPayLoading(false);
     setShowPayModal(false);
-    setPayToast(L("Payment recorded successfully!", "¡Pago registrado exitosamente!"));
-    setTimeout(() => setPayToast(null), 3000);
+    flashToast(L("Payment recorded successfully!", "¡Pago registrado exitosamente!"));
   };
   const L = (en, es) => lang === "es" ? es : en;
   const payMethods = [
@@ -891,7 +905,7 @@ function InvoiceDetail({ invoice, onBack, onEdit, clients, d, lang, companyProfi
           </p>
         </div>
         <div style={{ display:"flex", gap:8, position:"relative" }} ref={menuRef}>
-          {invoice.status === "draft" && <button onClick={handleSend} style={sBtn(true)}><Send size={14}/> {d.sendInvoice}</button>}
+          {invoice.status === "draft" && <button onClick={handleSend} disabled={sending} style={{ ...sBtn(true), opacity: sending ? 0.6 : 1, cursor: sending ? "wait" : "pointer" }}><Send size={14}/> {sending ? L("Sending…", "Enviando…") : d.sendInvoice}</button>}
           {["sent","partial","overdue"].includes(invoice.status) && <button onClick={openPayModal} style={sBtn(true)}><CheckCircle size={14}/> {d.markPaid}</button>}
           <button onClick={() => onEdit(invoice)} style={sBtn(false)}><FileText size={14}/> {d.edit}</button>
           <button onClick={() => setMenuOpen(!menuOpen)} style={{ ...sBtn(false), padding:"8px 8px" }}><MoreHorizontal size={16}/></button>
@@ -1059,10 +1073,10 @@ function InvoiceDetail({ invoice, onBack, onEdit, clients, d, lang, companyProfi
       {/* ── Payment Toast ── */}
       {payToast && (
         <div style={{ position:"fixed", bottom:24, right:24, padding:"12px 20px", borderRadius:8,
-          background: G.green, color:"#FFF", fontSize:13, fontWeight:600,
+          background: payToast.type === "error" ? G.danger : G.green, color:"#FFF", fontSize:13, fontWeight:600,
           fontFamily: G.font, boxShadow:"0 8px 24px rgba(0,0,0,0.2)", display:"flex", alignItems:"center", gap:8, zIndex:300,
           animation:"slideUp 0.3s ease" }}>
-          <CheckCircle size={16}/> {payToast}
+          <CheckCircle size={16}/> {payToast.msg}
         </div>
       )}
 
@@ -1165,6 +1179,8 @@ export default function Invoicing({ dark, v, t, lang }) {
   const [view, setView] = useState("list");
   const [selected, setSelected] = useState(null);
   const [toast, setToast] = useState(null);
+  // Copia viva de la factura seleccionada: así el detalle se actualiza al enviar o cobrar
+  const liveSelected = selected ? (invoices.find(i => i.id === selected.id) || selected) : null;
 
   const showToast = (msg, type = "success") => {
     setToast({ msg, type });
@@ -1181,23 +1197,23 @@ export default function Invoicing({ dark, v, t, lang }) {
   const handleSave = async (invoiceData) => {
     const L = (en, es) => lang === "es" ? es : en;
     const today = new Date().toISOString().split("T")[0];
-    const isEdit = view === "edit" && selected?.id;
+    const isEdit = view === "edit" && liveSelected?.id;
     const sending = invoiceData.status === "sent";
     const failMsg = L("Couldn't save the invoice. Nothing was lost — try again.", "No se pudo guardar la factura. No perdiste nada — intenta de nuevo.");
 
     let saved;
     if (isEdit) {
-      const payload = sending && !selected.sentDate ? { ...invoiceData, sentDate: today } : invoiceData;
-      const ok = updateInvoice ? await updateInvoice(selected.id, payload) : false;
+      const payload = sending && !liveSelected.sentDate ? { ...invoiceData, sentDate: today } : invoiceData;
+      const ok = updateInvoice ? await updateInvoice(liveSelected.id, payload) : false;
       if (!ok) { showToast(failMsg, "error"); return; }
-      saved = { ...selected, ...payload };
+      saved = { ...liveSelected, ...payload };
     } else {
       saved = addInvoice ? await addInvoice(sending ? { ...invoiceData, sentDate: today } : invoiceData) : null;
       if (!saved) { showToast(failMsg, "error"); return; }
     }
 
     // "Guardar y enviar" tiene que enviar el correo de verdad (solo si antes era borrador o nueva)
-    if (sending && (!isEdit || selected.status === "draft")) {
+    if (sending && (!isEdit || liveSelected.status === "draft")) {
       const emailed = sendInvoiceEmail ? await sendInvoiceEmail(saved) : false;
       showToast(emailed
         ? L("Invoice created & emailed", "Factura creada y enviada por correo")
@@ -1214,9 +1230,9 @@ export default function Invoicing({ dark, v, t, lang }) {
     <div style={{ fontFamily: G.font, color: G.text }}>
       {view === "list" && <InvoiceList invoices={invoices} clients={clients} onNew={handleNew} onView={handleView} d={d} lang={lang}/>}
       {(view === "create" || view === "edit") && (
-        <InvoiceForm onCancel={handleBack} onSave={handleSave} clients={clients} services={services} editInvoice={view === "edit" ? selected : null} d={d} lang={lang}/>
+        <InvoiceForm onCancel={handleBack} onSave={handleSave} clients={clients} services={services} editInvoice={view === "edit" ? liveSelected : null} d={d} lang={lang}/>
       )}
-      {view === "detail" && <InvoiceDetail invoice={selected} clients={clients} onBack={handleBack} onEdit={handleEdit} d={d} lang={lang} companyProfile={companyProfile}/>}
+      {view === "detail" && <InvoiceDetail invoice={liveSelected} clients={clients} onBack={handleBack} onEdit={handleEdit} d={d} lang={lang} companyProfile={companyProfile}/>}
 
       {toast && (
         <div style={{ position:"fixed", bottom:24, right:24, padding:"12px 20px", borderRadius: G.radiusSm,

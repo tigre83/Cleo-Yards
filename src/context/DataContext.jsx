@@ -585,32 +585,40 @@ export function DataProvider({ children }) {
     }
   };
 
+  // Envía el correo de una factura. Solo la marca como "enviada" si el correo
+  // de verdad salió, y solo si era borrador (reenviar NO cambia el estado de
+  // una factura ya enviada o pagada). Devuelve { ok, error?, resent?, to? }.
   const sendInvoice = async (id) => {
+    const inv = invoices.find(i => i.id === id);
+    if (!inv) return { ok: false, error: "not_found" };
+    const client = clients.find(c => c.id === inv.clientId);
+    if (!client) return { ok: false, error: "no_client" };
+    if (!client.email) return { ok: false, error: "no_email" };
+    const wasDraft = inv.status === "draft";
+    if (wasDraft && !inv.dueDate) return { ok: false, error: "no_due_date" };
+
     const now = new Date().toISOString().split("T")[0];
-    setInvoices(p => p.map(i => i.id === id ? { ...i, status: "sent", sentDate: now } : i));
-    await supabase.from("invoices").update({ status: "sent", sent_date: now }).eq("id", id);
+    const outgoing = wasDraft ? { ...inv, status: "sent", sentDate: now } : inv;
 
-    // Send email via backend
+    let emailed = false;
     try {
-      const inv = invoices.find(i => i.id === id);
-      if (!inv) return;
-      const client = clients.find(c => c.id === inv.clientId);
-      if (!client?.email) return;
-      const items = inv.items || [];
-
-      await fetch(`${EMAIL_API}/invoice`, {
+      const res = await fetch(`${EMAIL_API}/invoice`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          company: companyProfile,
-          client,
-          invoice: { ...inv, status: "sent", sentDate: now },
-          items,
-        }),
+        body: JSON.stringify({ company: companyProfile, client, invoice: outgoing, items: inv.items || [] }),
       });
+      emailed = res.ok;
     } catch (err) {
       console.error("Email send error:", err);
     }
+    if (!emailed) return { ok: false, error: "email_failed" };
+
+    if (wasDraft) {
+      setInvoices(p => p.map(i => i.id === id ? { ...i, status: "sent", sentDate: now } : i));
+      const { error } = await supabase.from("invoices").update({ status: "sent", sent_date: now }).eq("id", id);
+      if (error) console.error("sendInvoice: el correo salió pero no se pudo marcar como enviada:", error);
+    }
+    return { ok: true, resent: !wasDraft, to: client.email };
   };
 
   const markPaid = async (id, paymentDetails = {}) => {
