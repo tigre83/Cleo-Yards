@@ -1039,7 +1039,6 @@ function InvoiceDetail({ invoice, onBack, onEdit, clients, d, lang, companyProfi
             <div style={{ fontSize:11, fontWeight:700, color: G.dim, textTransform:"uppercase", letterSpacing:"0.05em", marginBottom:8 }}>PAYMENT DETAILS</div>
             <div style={{ fontSize:12, color: G.textSec, lineHeight:1.7 }}>
               <div><strong>Invoice #:</strong> {invoice.invoiceNumber || invoice.id}</div>
-              <div><strong>Tax Rate:</strong> {taxRate}%</div>
               {invoice.dueDate && <div><strong>Due Date:</strong> {fmtDate(invoice.dueDate, "en")}</div>}
               {cust?.paymentMethod && <div><strong>Payment:</strong> {{ zelle:"Zelle", card:"Credit Card", cash:"Cash", ach:"ACH Transfer" }[cust.paymentMethod] || cust.paymentMethod}</div>}
               

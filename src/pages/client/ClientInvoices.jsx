@@ -102,8 +102,8 @@ const generateInvoicePDFDoc = (invoice, client, companyProfile) => {
   y = doc.lastAutoTable.finalY + 20;
 
   const totalsX = rightCol - 180; const totalsValX = rightCol;
-  const subtotal = invoice.subtotal || 0; const taxAmt = invoice.taxAmount || 0;
-  const total = invoice.total || 0; const taxRate = invoice.taxRate || 6.25;
+  const subtotal = invoice.subtotal || 0;
+  const total = invoice.total || 0;
   doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(...gray);
   doc.text("Subtotal", totalsX, y); doc.setTextColor(...dark);
   doc.text("$" + subtotal.toFixed(2), totalsValX, y, { align: "right" }); y += 16;
@@ -111,8 +111,7 @@ const generateInvoicePDFDoc = (invoice, client, companyProfile) => {
     doc.setTextColor(...gray); doc.text("Discount", totalsX, y);
     doc.setTextColor(220, 38, 38); doc.text("-$" + invoice.discountAmt.toFixed(2), totalsValX, y, { align: "right" }); y += 16;
   }
-  doc.setTextColor(...gray); doc.text("Tax (" + taxRate + "%)", totalsX, y);
-  doc.setTextColor(...dark); doc.text("$" + taxAmt.toFixed(2), totalsValX, y, { align: "right" }); y += 6;
+  y += 6;
   doc.setDrawColor(226, 232, 228); doc.line(totalsX, y, rightCol, y); y += 16;
   doc.setFont("helvetica", "bold"); doc.setFontSize(14); doc.setTextColor(...green);
   doc.text("Total", totalsX, y); doc.text("$" + total.toFixed(2), totalsValX, y, { align: "right" }); y += 30;
@@ -186,7 +185,6 @@ export default function ClientInvoices() {
     const inv = selected;
     const st = statusConfig(inv.status, lang);
     const isPayable = ["sent", "overdue"].includes(inv.status);
-    const taxRate = (inv.taxRate || 6.25).toFixed(2);
 
     return (
       <div>
@@ -276,9 +274,6 @@ export default function ClientInvoices() {
                 <div style={{ display: "flex", justifyContent: "space-between", width: 200, fontSize: 12, color: v.textSec }}>
                   <span>Subtotal</span><span>{fmtMoney(inv.subtotal)}</span>
                 </div>
-                <div style={{ display: "flex", justifyContent: "space-between", width: 200, fontSize: 12, color: v.textSec }}>
-                  <span>Tax ({taxRate}%)</span><span>{fmtMoney(inv.taxAmount)}</span>
-                </div>
                 <div style={{ display: "flex", justifyContent: "space-between", width: 200, fontSize: 16, fontWeight: 800, color: v.text, borderTop: "2px solid " + v.text, paddingTop: 8, marginTop: 4 }}>
                   <span>Total</span><span>{fmtMoney(inv.total)}</span>
                 </div>
@@ -318,7 +313,6 @@ export default function ClientInvoices() {
                 <div><strong>{L("Date", "Fecha")}:</strong> {fmtDate(inv.date, lang)}</div>
                 {inv.dueDate && <div><strong>{L("Due", "Vence")}:</strong> {fmtDate(inv.dueDate, lang)}</div>}
                 {inv.paidDate && <div><strong>{L("Paid", "Pagada")}:</strong> {fmtDate(inv.paidDate, lang)}</div>}
-                <div><strong>Tax:</strong> {taxRate}%</div>
               </div>
             </div>
           </div>
