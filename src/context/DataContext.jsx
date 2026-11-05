@@ -63,7 +63,7 @@ export function DataProvider({ children }) {
         const { data: csData } = await supabase.from("client_services").select("*");
         const clientsWithSvc = (clientData || []).map(cl => {
           const clCamel = toCamel(cl);
-          const svcList = (csData || []).filter(cs => cs.client_id === cl.id).map(cs => ({ serviceId: cs.service_id, qty: cs.qty, customPrice: cs.custom_price != null ? Number(cs.custom_price) : null }));
+          const svcList = (csData || []).filter(cs => cs.client_id === cl.id).map(cs => ({ serviceId: cs.service_id, qty: cs.qty }));
           return { ...clCamel, services: svcList };
         });
         setClients(clientsWithSvc);
@@ -165,7 +165,11 @@ export function DataProvider({ children }) {
     const cleaned = Object.fromEntries(
       Object.entries(toSnake(clientData)).map(([k, v]) => [k, v === "" ? null : v])
     );
-    const { data } = await supabase.from("clients").insert({ ...cleaned, company_id: COMPANY_ID }).select().single();
+    const { data, error } = await supabase.from("clients").insert({ ...cleaned, company_id: COMPANY_ID }).select().single();
+    if (error) {
+      console.error("addClient failed:", error);
+      return null;
+    }
     if (data) {
       // Insert client_services
       if (svcList?.length) {
@@ -176,7 +180,6 @@ export function DataProvider({ children }) {
           client_id: data.id,
           service_id: typeof s === "object" ? s.serviceId : s,
           qty: typeof s === "object" ? s.qty : 1,
-          custom_price: typeof s === "object" ? (s.customPrice ?? null) : null,
         }));
         if (rows.length) await supabase.from("client_services").insert(rows);
       }
@@ -189,6 +192,7 @@ export function DataProvider({ children }) {
 
   const updateClient = async (id, updates) => {
     const { services: svcList, ...clientData } = updates;
+    const prevClients = clients;
     setClients(p => p.map(c => c.id === id ? { ...c, ...updates } : c));
     
     const { createdAt, id: _, companyId, ...dbData } = clientData;
@@ -196,7 +200,12 @@ export function DataProvider({ children }) {
     const cleaned = Object.fromEntries(
       Object.entries(toSnake(dbData)).map(([k, v]) => [k, v === "" ? null : v])
     );
-    await supabase.from("clients").update(cleaned).eq("id", id);
+    const { error } = await supabase.from("clients").update(cleaned).eq("id", id);
+    if (error) {
+      console.error("updateClient failed:", error);
+      setClients(prevClients); // revierte la actualización optimista
+      return false;
+    }
     
     // Update client_services
     if (svcList) {
@@ -208,10 +217,10 @@ export function DataProvider({ children }) {
         client_id: id,
         service_id: typeof s === "object" ? s.serviceId : s,
         qty: typeof s === "object" ? s.qty : 1,
-        custom_price: typeof s === "object" ? (s.customPrice ?? null) : null,
       }));
       if (rows.length) await supabase.from("client_services").insert(rows);
     }
+    return true;
   };
 
   /* ══════════════════════════════════════════════
@@ -219,10 +228,14 @@ export function DataProvider({ children }) {
      ══════════════════════════════════════════════ */
   const addJob = async (job) => {
     const { serviceIds, ...jobData } = job;
-    const { data } = await supabase.from("jobs").insert({
+    const { data, error } = await supabase.from("jobs").insert({
       ...toSnake(jobData),
       company_id: COMPANY_ID,
     }).select().single();
+    if (error) {
+      console.error("addJob failed:", error);
+      return null;
+    }
     if (data) {
       // Insert job_services
       if (serviceIds?.length) {
@@ -275,20 +288,18 @@ export function DataProvider({ children }) {
     if (!client) return;
 
     if (client.billingType === "per_visit") {
-      // Immediate invoice for this job
-      const jobSvcs = (job.serviceIds || []).map(entry => {
+      // Immediate invoice for this job — el monto es el valor fijo acordado
+      // con el cliente; los servicios solo se listan como descripción de lo
+      // que se hizo, ya no tienen precio individual (FASE 2.5).
+      const jobSvcNames = (job.serviceIds || []).map(entry => {
         const sid = typeof entry === "object" ? entry.serviceId : entry;
-        const qty = typeof entry === "object" ? entry.qty || 1 : 1;
         const svc = services.find(s => s.id === sid);
-        if (!svc) return null;
-        const clientEntry = (client.services || []).find(cs => (typeof cs === "object" ? cs.serviceId : cs) === sid);
-        const customPrice = clientEntry && typeof clientEntry === "object" ? clientEntry.customPrice : null;
-        const price = customPrice != null ? customPrice : svc.price;
-        return { serviceId: sid, name: svc.name, qty, price };
+        return svc ? svc.name : null;
       }).filter(Boolean);
-      
-      const subtotal = jobSvcs.reduce((s, i) => s + i.qty * i.price, 0);
-      
+
+      const subtotal = client.agreedValue || 0;
+      const jobSvcs = [{ serviceId: null, name: jobSvcNames.join(", ") || "Service", qty: 1, price: subtotal }];
+
       const newInv = await addInvoice({
         clientId: client.id,
         invoiceNumber: getNextInvoiceNumber(),
@@ -313,73 +324,11 @@ export function DataProvider({ children }) {
           });
         } catch (err) { console.error("Auto-invoice email error:", err); }
       }
-    } else if (client.billingType === "monthly") {
-      // Check if all jobs for this client this month are completed
-      const jobDate = new Date(job.date + "T12:00:00");
-      const monthStart = new Date(jobDate.getFullYear(), jobDate.getMonth(), 1).toISOString().split("T")[0];
-      const monthEnd = new Date(jobDate.getFullYear(), jobDate.getMonth() + 1, 0).toISOString().split("T")[0];
-      
-      // Get all jobs for this client this month (use updated state)
-      const updatedJobs = jobs.map(j => j.id === id ? { ...j, status: "completed" } : j);
-      const clientMonthJobs = updatedJobs.filter(j => 
-        j.clientId === client.id && j.date >= monthStart && j.date <= monthEnd
-      );
-      
-      const allCompleted = clientMonthJobs.length > 0 && clientMonthJobs.every(j => j.status === "completed" || j.status === "cancelled");
-      
-      if (allCompleted) {
-        // Consolidate all completed jobs into one invoice
-        const completedJobs = clientMonthJobs.filter(j => j.status === "completed");
-        const allItems = {};
-        
-        completedJobs.forEach(j => {
-          (j.serviceIds || []).forEach(entry => {
-            const sid = typeof entry === "object" ? entry.serviceId : entry;
-            const qty = typeof entry === "object" ? entry.qty || 1 : 1;
-            if (allItems[sid]) {
-              allItems[sid].qty += qty;
-            } else {
-              const svc = services.find(s => s.id === sid);
-              if (svc) {
-                const clientEntry = (client.services || []).find(cs => (typeof cs === "object" ? cs.serviceId : cs) === sid);
-                const customPrice = clientEntry && typeof clientEntry === "object" ? clientEntry.customPrice : null;
-                const price = customPrice != null ? customPrice : svc.price;
-                allItems[sid] = { serviceId: sid, name: svc.name, qty, price };
-              }
-            }
-          });
-        });
-        
-        const items = Object.values(allItems);
-        const subtotal = items.reduce((s, i) => s + i.qty * i.price, 0);
-        const monthName = jobDate.toLocaleDateString("en-US", { month: "long", year: "numeric" });
-        
-        const newInv = await addInvoice({
-          clientId: client.id,
-          invoiceNumber: getNextInvoiceNumber(),
-          date: new Date().toISOString().split("T")[0],
-          dueDate: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-          status: "sent",
-          sentDate: new Date().toISOString().split("T")[0],
-          subtotal,
-          total: subtotal,
-          notes: monthName + " services",
-          paymentMethod: client.paymentMethod,
-          items,
-        });
-
-        // Send invoice email
-        if (newInv?.id && client.email) {
-          try {
-            await fetch(`${EMAIL_API}/invoice`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ company: companyProfile, client, invoice: newInv, items }),
-            });
-          } catch (err) { console.error("Auto-invoice email error:", err); }
-        }
-      }
     }
+    // FASE 4: los clientes "monthly" ya NO se facturan al completar trabajos.
+    // Se facturan una sola vez, automáticamente, el día 1 del mes desde el
+    // backend (Cleo-Yards-Emails → runMonthlyBilling). Así no hay doble cobro
+    // ni avisos al cliente mientras el trabajo está en curso.
 
     // FASE 1: Disabled job completion email to customer
     // Elm prefers to notify clients only on final billing day (no intra-month notifications)
@@ -656,23 +605,16 @@ export function DataProvider({ children }) {
       const svc = typeof cs === "string" ? services.find(s => s.id === cs) : services.find(s => s.id === cs.serviceId);
       if (!svc) return null;
       const qty = typeof cs === "string" ? 1 : (cs.qty || 1);
-      const customPrice = typeof cs === "object" ? cs.customPrice : null;
-      const price = customPrice != null ? customPrice : svc.price;
-      return { ...svc, qty, price, customPrice };
+      // FASE 2.5: checklist puro — el cliente tiene un valor total acordado,
+      // no un precio por servicio (ver getClientMonthlyTotal)
+      return { ...svc, qty };
     }).filter(Boolean);
   };
-  // FASE 2: resuelve el precio real de un servicio para un cliente puntual
-  // (custom_price si existe, si no cae al precio "sugerido" del catálogo)
-  const getClientServicePrice = (clientId, serviceId) => {
-    const client = clients.find(c => c.id === clientId);
-    const svc = services.find(s => s.id === serviceId);
-    if (!client) return svc?.price || 0;
-    const entry = (client.services || []).find(cs => (typeof cs === "object" ? cs.serviceId : cs) === serviceId);
-    const customPrice = entry && typeof entry === "object" ? entry.customPrice : null;
-    return customPrice != null ? customPrice : (svc?.price || 0);
-  };
+  // FASE 2.5: el valor ya no se arma sumando servicios — es un monto fijo
+  // acordado por cliente, sin importar cuántos servicios o visitas tenga.
   const getClientMonthlyTotal = (clientId) => {
-    return getClientServices(clientId).reduce((sum, s) => sum + s.price * (s.qty || 1), 0);
+    const client = clients.find(c => c.id === clientId);
+    return client?.agreedValue || 0;
   };
 
   const addNotification = (type, data) => {
@@ -703,7 +645,7 @@ export function DataProvider({ children }) {
       addClient, updateClient,
       addInvoice, updateInvoice, sendInvoice, markPaid,
       getNextInvoiceNumber, getInvoicesByClient,
-      addNotification, getServiceById, getClientServices, getClientServicePrice, getClientMonthlyTotal
+      addNotification, getServiceById, getClientServices, getClientMonthlyTotal
     }}>
       {children}
     </DataContext.Provider>

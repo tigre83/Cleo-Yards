@@ -2,6 +2,34 @@ import { useState, useMemo, useRef, useEffect } from "react";
 import { useData } from "../../context/DataContext";
 import { useAuth } from "../../context/AuthContext";
 import { Plus, ChevronLeft, ChevronRight, Calendar, Clock, CheckCircle, AlertTriangle, Users, X, Search, Trash2, Leaf, UserPlus, CalendarDays, ClipboardList, Zap, MoreHorizontal, Save } from "lucide-react";
+import { Calendar as RBCalendar, dateFnsLocalizer } from "react-big-calendar";
+import * as _dndAddonNS from "react-big-calendar/lib/addons/dragAndDrop";
+import "react-big-calendar/lib/css/react-big-calendar.css";
+import "react-big-calendar/lib/addons/dragAndDrop/styles.css";
+import { format, parse, startOfWeek as dfStartOfWeek, getDay } from "date-fns";
+import { enUS, es as esLocale } from "date-fns/locale";
+
+/* ── FASE 3: Calendario drag-and-drop ──
+   NOTA: algunos bundlers (Vite/Rolldown) envuelven este addon con un nivel
+   extra de ".default" por su doble re-export interno. Este helper lo
+   desenvuelve sin importar cuántas capas tenga, en vez de asumir una sola. */
+function _unwrapDefault(mod) {
+  let m = mod, guard = 0;
+  while (m && typeof m !== "function" && typeof m === "object" && "default" in m && guard < 5) {
+    m = m.default;
+    guard++;
+  }
+  return m;
+}
+const withDragAndDrop = _unwrapDefault(_dndAddonNS);
+const dndLocalizer = dateFnsLocalizer({
+  format,
+  parse,
+  startOfWeek: () => dfStartOfWeek(new Date(), { weekStartsOn: 1 }),
+  getDay,
+  locales: { "en-US": enUS, es: esLocale },
+});
+const DnDCalendar = withDragAndDrop(RBCalendar);
 
 /* ── CountUp hook ── */
 function useCountUp(target, duration = 1400) {
@@ -49,7 +77,12 @@ const fmtTime = (time) => {
   return h12 + ":" + m + " " + ampm;
 };
 
-const isToday = (dateStr) => dateStr === new Date().toISOString().split("T")[0];
+// FASE 3: helpers de conversión Date <-> string para el calendario drag-and-drop
+const toDateStr = (d) => {
+  const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, "0"), day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
+const toTimeStr = (d) => `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 
 const statusConfig = (s, lang) => {
   const labels = {
@@ -324,7 +357,7 @@ const CYTimePicker = ({ value, onChange, v, dark, lang, style }) => {
 };
 
 export default function Scheduling({ dark, v, t, lang }) {
-  const { jobs, crews, clients, services, getJobsByDate, addJob, updateJob, deleteJob, addClient, generateMonthlyJobs, completeJob, cancelJob, startJob, reassignJob, toggleServiceComplete, getClientServicePrice } = useData();
+  const { jobs, crews, clients, services, getJobsByDate, addJob, updateJob, deleteJob, addClient, generateMonthlyJobs, completeJob, cancelJob, startJob, reassignJob, toggleServiceComplete, getClientMonthlyTotal } = useData();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin" || user?.role === "business";
   const s = t.sched;
@@ -423,15 +456,158 @@ export default function Scheduling({ dark, v, t, lang }) {
     return m;
   }, [clients]);
 
+  /* ══════════════════════════════════════════════
+     FASE 3 — Calendario drag-and-drop manual
+     ══════════════════════════════════════════════ */
+  const [draggedClient, setDraggedClient] = useState(null);
+  const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
+  const [calView, setCalView] = useState(() => (typeof window !== "undefined" && window.innerWidth < 768) ? "day" : "week");
+  useEffect(() => {
+    const onResize = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      setCalView(mobile ? "day" : "week");
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  // Clientes con servicios activos que todavía no tienen un job esta semana
+  const pendingClients = useMemo(() => {
+    return (clients || []).filter(cl => cl.status === "active" && (cl.services || []).length > 0 && !weekJobs.some(j => j.clientId === cl.id));
+  }, [clients, weekJobs]);
+
+  // Jobs -> eventos del calendario
+  const calendarEvents = useMemo(() => {
+    return (jobs || []).filter(j => j.status !== "rescheduled").map(j => {
+      const [hh, mm] = (j.time || "08:00").split(":").map(Number);
+      const start = new Date(j.date + "T00:00:00");
+      start.setHours(hh || 0, mm || 0, 0, 0);
+      const durMin = Math.round((j.duration || 1) * 60);
+      const end = new Date(start.getTime() + durMin * 60000);
+      const client = clientMap[j.clientId];
+      return { id: j.id, title: client?.name || "—", start, end, resource: j };
+    });
+  }, [jobs, clientMap]);
+
+  const handleEventDrop = ({ event, start }) => {
+    const job = event.resource;
+    updateJob(job.id, { date: toDateStr(start), time: toTimeStr(start) });
+  };
+
+  const handleEventResize = ({ event, start, end }) => {
+    const job = event.resource;
+    const durHours = Math.max(0.5, Math.round(((end - start) / 3600000) * 2) / 2);
+    updateJob(job.id, { date: toDateStr(start), time: toTimeStr(start), duration: durHours });
+  };
+
+  const handleSelectEvent = (event) => { if (event.resource) openDetail(event.resource); };
+  const handleSelectSlot = ({ start }) => openNewJob(toDateStr(start), toTimeStr(start));
+
+  const handleDragStartFromSidebar = (cl) => () => setDraggedClient(cl);
+
+  // FASE 3: al soltar un cliente, crea el job con la cuadrilla y servicios elegidos
+  const createJobFromDrop = (cl, start, crewId, serviceIdsToInclude) => {
+    const svcs = (cl.services || [])
+      .filter(s => serviceIdsToInclude.includes(typeof s === "string" ? s : s.serviceId))
+      .map(s => ({
+        serviceId: typeof s === "string" ? s : s.serviceId,
+        qty: typeof s === "string" ? 1 : (s.qty || 1),
+      }));
+    const duration = Math.max(1, Math.round(svcs.length * 0.5 * 2) / 2);
+    addJob({
+      clientId: cl.id,
+      serviceIds: svcs,
+      crewId: crewId || null,
+      date: toDateStr(start),
+      time: toTimeStr(start),
+      duration,
+      status: "assigned",
+      notes: "",
+    });
+  };
+
+  // Flujo al soltar un cliente:
+  // 1) Si no tiene cuadrilla asignada -> pregunta cuál usar
+  // 2) Si tiene más de 1 servicio -> pregunta cuáles van en esta visita
+  // Si no hace falta ninguna de las dos, se agenda directo.
+  const [dropPrompt, setDropPrompt] = useState(null); // { client, start, step: "crew"|"services", crewId, selected: [serviceId,...] }
+
+  const handleDropFromOutside = ({ start }) => {
+    if (!draggedClient) return;
+    const cl = draggedClient;
+    setDraggedClient(null);
+    const allServiceIds = (cl.services || []).map(s => typeof s === "string" ? s : s.serviceId);
+    const needsCrew = !cl.defaultCrewId;
+    const needsServiceChoice = allServiceIds.length > 1;
+    if (!needsCrew && !needsServiceChoice) {
+      createJobFromDrop(cl, start, cl.defaultCrewId, allServiceIds);
+    } else {
+      setDropPrompt({ client: cl, start, step: needsCrew ? "crew" : "services", crewId: cl.defaultCrewId || null, selected: allServiceIds });
+    }
+  };
+
+  const dragFromOutsideItem = () => {
+    if (!draggedClient) return null;
+    // FASE 3 fix: sin start/end explícitos, RBC dibuja la sombra del drag
+    // abarcando el día completo. Le damos una duración de 1h por defecto
+    // (el usuario puede redimensionarla después de soltar).
+    const start = new Date();
+    const end = new Date(start.getTime() + 60 * 60 * 1000);
+    return { title: draggedClient.name, start, end };
+  };
+
+  const eventStyleGetter = (event) => {
+    const job = event.resource;
+    // Durante "drag from outside" (arrastrar un cliente del sidebar), RBC
+    // dibuja una vista previa del evento con solo { title } — sin .resource.
+    if (!job) {
+      return {
+        style: { backgroundColor: "#16A34Acc", borderRadius: 6, border: "none", color: "#fff", fontSize: 11, padding: "1px 4px" },
+      };
+    }
+    const crew = crewMap[job.crewId];
+    const cancelled = job.status === "cancelled";
+    return {
+      style: {
+        backgroundColor: cancelled ? "#94A3B8" : (crew?.color || "#16A34A"),
+        borderRadius: 6,
+        border: "none",
+        color: "#fff",
+        opacity: cancelled ? 0.5 : (job.status === "completed" ? 0.75 : 1),
+        fontSize: 11,
+        padding: "1px 4px",
+      },
+    };
+  };
+
+  const JobEvent = ({ event }) => {
+    const job = event.resource;
+    // Igual aquí: la vista previa de drag-from-outside no trae .resource
+    if (!job) {
+      return <div style={{ lineHeight: 1.3, overflow: "hidden" }}><strong style={{ fontSize: 11, display: "block", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{event.title}</strong></div>;
+    }
+    const svcNames = (job.serviceIds || []).map(entry => {
+      const sid = typeof entry === "object" ? entry.serviceId : entry;
+      const svc = (services || []).find(x => x.id === sid);
+      return svc ? (lang === "es" && svc.nameEs ? svc.nameEs : svc.name) : null;
+    }).filter(Boolean);
+    return (
+      <div style={{ lineHeight: 1.3, overflow: "hidden", height: "100%" }}>
+        <strong style={{ fontSize: 11, display: "block", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{event.title}</strong>
+        {svcNames.length > 0 && <div style={{ fontSize: 9, opacity: 0.9, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{svcNames.join(", ")}</div>}
+      </div>
+    );
+  };
 
   // ── Form handlers ──
-  const openNewJob = (date) => {
+  const openNewJob = (date, timeOverride) => {
     const now = new Date();
     const h = now.getHours();
     const m = now.getMinutes();
     const nextM = m < 30 ? 30 : 0;
     const nextH = m < 30 ? h : h + 1;
-    const defaultTime = (nextH >= 6 && nextH <= 19) ? `${String(nextH).padStart(2, "0")}:${String(nextM).padStart(2, "0")}` : "08:00";
+    const defaultTime = timeOverride || ((nextH >= 6 && nextH <= 19) ? `${String(nextH).padStart(2, "0")}:${String(nextM).padStart(2, "0")}` : "08:00");
     setEditJob({ clientId: "", serviceIds: [], crewId: "", date: date || new Date().toISOString().split("T")[0], time: defaultTime, duration: 1, notes: "", status: "assigned" });
     setView("form");
   };
@@ -471,7 +647,7 @@ export default function Scheduling({ dark, v, t, lang }) {
     const svcNames = (job.serviceIds || []).map(entry => {
       const sid = typeof entry === "object" ? entry.serviceId : entry;
       const svc = (services || []).find(s => s.id === sid);
-      return svc ? { serviceId: sid, name: lang === "es" && svc.nameEs ? svc.nameEs : svc.name, price: getClientServicePrice(job.clientId, sid), qty: typeof entry === "object" ? entry.qty || 1 : 1 } : null;
+      return svc ? { serviceId: sid, name: lang === "es" && svc.nameEs ? svc.nameEs : svc.name, qty: typeof entry === "object" ? entry.qty || 1 : 1 } : null;
     }).filter(Boolean);
 
     const fmtJobTime = (t) => {
@@ -525,7 +701,7 @@ export default function Scheduling({ dark, v, t, lang }) {
                 const sid = typeof entry === "object" ? entry.serviceId : entry;
                 const svc = (services || []).find(s => s.id === sid);
                 const qty = typeof entry === "object" ? entry.qty || 1 : 1;
-                return svc ? { serviceId: sid, name: lang === "es" && svc.nameEs ? svc.nameEs : svc.name, price: getClientServicePrice(job.clientId, sid), qty, done: cs.includes(sid) } : null;
+                return svc ? { serviceId: sid, name: lang === "es" && svc.nameEs ? svc.nameEs : svc.name, qty, done: cs.includes(sid) } : null;
               }).filter(Boolean);
               setSummaryData({ done: allSvcs.filter(s => s.done), pending: allSvcs.filter(s => !s.done), allDone: allSvcs.every(s => s.done), clientName: clientMap[job.clientId]?.name || "—", date: job.date });
             }}
@@ -535,6 +711,16 @@ export default function Scheduling({ dark, v, t, lang }) {
             <button onClick={() => { setRescheduleDate(""); setRescheduleReason(""); setRescheduleOther(""); setRescheduleTime(""); setShowReschedule(true); }}
               style={{ padding: "10px 20px", borderRadius: 10, border: "2px solid #F59E0B", background: "transparent", color: "#F59E0B", fontSize: 13, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
               <CalendarDays size={15}/> {L("Reschedule", "Reprogramar")}
+            </button>
+            <button onClick={() => {
+              if (window.confirm(L("Delete this job? This can't be undone — the client will go back to the Pending list.", "¿Eliminar este trabajo? No se puede deshacer — el cliente volverá a la lista de Pendientes."))) {
+                deleteJob(job.id);
+                setView("week");
+                setSelectedJob(null);
+              }
+            }}
+              style={{ padding: "10px 20px", borderRadius: 10, border: "2px solid #DC2626", background: "transparent", color: "#DC2626", fontSize: 13, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, marginLeft: "auto" }}>
+              <Trash2 size={15}/> {L("Delete", "Eliminar")}
             </button>
           </div>
         )}
@@ -601,15 +787,16 @@ export default function Scheduling({ dark, v, t, lang }) {
                           </div>
                           <span style={{ fontSize: 12, fontWeight: isDone ? 600 : 400, color: isDone ? "#16A34A" : v.text, flex: 1,
                             textDecoration: isDone ? "line-through" : "none" }}>{s.name}</span>
-                          {isAdmin && <span style={{ fontSize: 11, fontWeight: 700, color: isDone ? "#16A34A" : v.textSec }}>×{s.qty} ${s.price * s.qty}</span>}
+                          {isAdmin && s.qty > 1 && <span style={{ fontSize: 11, fontWeight: 700, color: isDone ? "#16A34A" : v.textSec }}>×{s.qty}</span>}
                         </div>
                       );
                     })}
                   </div>
-                  {isAdmin && svcNames.length > 0 && (
-                    <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid " + v.border, display: "flex", justifyContent: "flex-end" }}>
+                  {isAdmin && client && (
+                    <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid " + v.border, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontSize: 10, color: v.textSec }}>{L("Agreed value", "Valor acordado")}</span>
                       <span style={{ fontSize: 13, fontWeight: 800, color: "#16A34A" }}>
-                        Total: ${svcNames.reduce((s, sv) => s + sv.price * sv.qty, 0)}
+                        ${getClientMonthlyTotal(client.id)}{client.billingType === "monthly" ? L("/mo", "/mes") : ""}
                       </span>
                     </div>
                   )}
@@ -737,7 +924,6 @@ export default function Scheduling({ dark, v, t, lang }) {
                     <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 0", fontSize: 12 }}>
                       <CheckCircle size={12} color="#16A34A"/>
                       <span style={{ color: v.text, flex: 1 }}>{s.name}</span>
-                      {isAdmin && <span style={{ color: "#16A34A", fontWeight: 600 }}>${s.price * s.qty}</span>}
                     </div>
                   ))}
                 </div>
@@ -996,7 +1182,6 @@ export default function Scheduling({ dark, v, t, lang }) {
                         <button onClick={() => updateQty(qty + 1)}
                           style={{ width: 22, height: 22, borderRadius: 4, border: "1px solid " + cc + "40", background: cc + "08", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: cc, fontWeight: 700 }}>+</button>
                       </div>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: sel ? cc : v.textSec, minWidth: 55, textAlign: "right" }}>{sel ? "$" + (getClientServicePrice(editJob.clientId, svc.id) * qty) : "$" + svc.price}</span>
                     </div>
                   );
                 })}
@@ -1334,64 +1519,63 @@ export default function Scheduling({ dark, v, t, lang }) {
         </span>
       </div>
 
-      {/* Week grid */}
-      <div style={{ borderRadius: 14, border: "1px solid " + v.border, overflow: "hidden", background: v.cardBg }}>
-        {/* Day headers */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", borderBottom: "1px solid " + v.border }}>
-          {weekDates.map((date, i) => {
-            const today = isToday(date);
-            return (
-              <div key={i} style={{ padding: "12px 14px", borderRight: i < 6 ? "1px solid " + v.border : "none", fontSize: 12, fontWeight: 700, color: today ? "#16A34A" : v.textSec, textTransform: "uppercase", letterSpacing: "0.04em", background: today ? (dark ? "rgba(22,163,74,0.06)" : "rgba(22,163,74,0.03)") : "transparent" }}>
-                {fmtDayHeader(date, lang)}
-                <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 400, color: v.textSec }}>
-                  ({jobs.filter(j => j.date === date).length})
-                </span>
-              </div>
-            );
-          })}
+      {/* FASE 3: Calendario drag-and-drop + sidebar de clientes pendientes */}
+      <div style={{ borderRadius: 14, border: "1px solid " + v.border, overflow: "hidden", background: v.cardBg, display: "flex", flexDirection: isMobile ? "column" : "row" }}>
+        {/* Sidebar: clientes con servicios activos sin job esta semana */}
+        <div style={{ width: isMobile ? "100%" : 230, flexShrink: 0, borderRight: isMobile ? "none" : "1px solid " + v.border, borderBottom: isMobile ? "1px solid " + v.border : "none", padding: 12, display: "flex", flexDirection: "column", gap: 8, maxHeight: isMobile ? 180 : 640, overflowY: "auto" }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: v.textSec, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+            {lang === "es" ? `Pendientes (${pendingClients.length})` : `Pending (${pendingClients.length})`}
+          </div>
+          {pendingClients.length === 0 && (
+            <p style={{ fontSize: 11, color: v.textTer }}>{lang === "es" ? "Todos agendados esta semana" : "All scheduled this week"}</p>
+          )}
+          {pendingClients.map(cl => (
+            <div key={cl.id} draggable onDragStart={handleDragStartFromSidebar(cl)} onDragEnd={() => setDraggedClient(null)}
+              style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid " + v.border, background: dark ? "rgba(255,255,255,0.02)" : "#FAFFFE", cursor: "grab" }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: v.text }}>{cl.name}</div>
+              <div style={{ fontSize: 10, color: v.textSec, marginTop: 2 }}>{(cl.services || []).length} {lang === "es" ? "servicios" : "services"}</div>
+            </div>
+          ))}
+          <p style={{ fontSize: 9, color: v.textTer, marginTop: 4, lineHeight: 1.4 }}>
+            {lang === "es" ? "Arrastra un cliente al calendario para agendarlo." : "Drag a client onto the calendar to schedule."}
+          </p>
         </div>
 
-        {/* Job cards */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", minHeight: 400 }}>
-          {weekDates.map((date, dayIdx) => {
-            const dayJobs = jobs.filter(j => j.date === date && j.status !== "rescheduled").sort((a, b) => a.time.localeCompare(b.time));
-            const today = isToday(date);
-            return (
-              <div key={dayIdx} style={{ borderRight: dayIdx < 6 ? "1px solid " + v.border : "none", padding: 8, background: today ? (dark ? "rgba(22,163,74,0.03)" : "rgba(22,163,74,0.015)") : "transparent" }}>
-                {dayJobs.map(j => {
-                  const st = statusConfig(j.status, lang);
-                  const crew = crewMap[j.crewId];
-                  const client = clientMap[j.clientId];
-                  return (
-                    <div key={j.id} className="cy-card-hover" style={{ padding: "8px 10px", borderRadius: 8, marginBottom: 6, background: dark ? "rgba(255,255,255,0.03)" : v.surface, border: "1px solid " + v.border, cursor: "pointer", borderLeft: "3px solid " + (crew?.color || "#94A3B8"), transition: "all 0.15s" }} onClick={() => openDetail(j)}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                        <span style={{ fontSize: 11, fontWeight: 600, color: v.textSec }}>{fmtTime(j.time)}</span>
-                        <span style={{ fontSize: 9, fontWeight: 600, padding: "2px 6px", borderRadius: 4, background: dark ? st.darkBg : st.bg, color: st.color }}>{st.label}</span>
-                      </div>
-                      {(() => {
-                        const svcNames = (j.serviceIds || []).map(entry => {
-                          const sid = typeof entry === "object" ? entry.serviceId : entry;
-                          const svc = services.find(s => s.id === sid);
-                          if (!svc) return null;
-                          return lang === "es" && svc.nameEs ? svc.nameEs : svc.name;
-                        }).filter(Boolean);
-                        return <p style={{ fontSize: 12, fontWeight: 600, color: v.text, marginBottom: 2 }}>{svcNames.length > 0 ? svcNames.join(", ") : j.notes || "Job"}</p>;
-                      })()}
-                      <p style={{ fontSize: 11, color: v.textTer }}>{client?.name || "—"}</p>
-                      {crew && <p style={{ fontSize: 10, color: crew.color, fontWeight: 600, marginTop: 4 }}>● {crew.name}</p>}
-                      {j.duration && <span style={{ fontSize: 9, color: v.textSec }}>{j.duration >= 1 ? Math.floor(j.duration) + "h" : ""}{j.duration % 1 ? " " + Math.round((j.duration % 1) * 60) + "m" : ""}</span>}
-                      {(j.notes || "").includes("Reprogramado") || (j.notes || "").includes("Rescheduled") ? <div style={{ marginTop: 3 }}><span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 3, background: "#FFFBEB", color: "#F59E0B", fontWeight: 700 }}>↻ {lang === "es" ? "Reprogramado" : "Rescheduled"}</span></div> : null}
-                    </div>
-                  );
-                })}
-                {dayJobs.length === 0 && (
-                  <div style={{ padding: "20px 8px", textAlign: "center", fontSize: 11, color: v.textTer }}>
-                    {lang === "es" ? "Sin trabajos" : "No jobs"}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+        {/* Calendario */}
+        <div style={{ flex: 1, padding: 12, minWidth: 0 }}>
+          <DnDCalendar
+            localizer={dndLocalizer}
+            culture={lang === "es" ? "es" : "en-US"}
+            events={calendarEvents}
+            date={new Date(weekBase + "T00:00:00")}
+            onNavigate={(newDate) => setWeekBase(toDateStr(newDate))}
+            view={calView}
+            onView={setCalView}
+            views={["week", "day"]}
+            step={30}
+            timeslots={2}
+            min={new Date(1970, 0, 1, 6, 0, 0)}
+            max={new Date(1970, 0, 1, 20, 0, 0)}
+            style={{ height: 640 }}
+            selectable
+            resizable
+            onSelectSlot={handleSelectSlot}
+            onSelectEvent={handleSelectEvent}
+            onEventDrop={handleEventDrop}
+            onEventResize={handleEventResize}
+            onDropFromOutside={handleDropFromOutside}
+            dragFromOutsideItem={dragFromOutsideItem}
+            eventPropGetter={eventStyleGetter}
+            components={{ event: JobEvent }}
+            messages={{
+              next: lang === "es" ? "Sig." : "Next",
+              previous: lang === "es" ? "Ant." : "Back",
+              today: s.today,
+              week: lang === "es" ? "Semana" : "Week",
+              day: lang === "es" ? "Día" : "Day",
+              noEventsInRange: lang === "es" ? "Sin trabajos en este rango" : "No jobs in this range",
+            }}
+          />
         </div>
       </div>
 
@@ -1450,6 +1634,83 @@ export default function Scheduling({ dark, v, t, lang }) {
         </div>
       )}
 
+      {/* FASE 3: Al soltar un cliente, pregunta cuadrilla (si falta) y servicios (si hay más de 1) */}
+      {dropPrompt && (
+        <div onClick={() => setDropPrompt(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: v.cardBg, borderRadius: 14, width: 340, maxWidth: "90vw", border: "1px solid " + v.border, boxShadow: "0 20px 50px rgba(0,0,0,0.25)" }}>
+            <div style={{ padding: "18px 20px 4px" }}>
+              <div style={{ fontSize: 15, fontWeight: 800, color: v.text }}>{dropPrompt.client.name}</div>
+              <div style={{ fontSize: 12, color: v.textSec, marginTop: 2 }}>
+                {dropPrompt.step === "crew"
+                  ? (lang === "es" ? "Este cliente no tiene cuadrilla asignada. ¿Cuál va a hacer el trabajo?" : "This client has no crew assigned. Which one will do the job?")
+                  : (lang === "es" ? "¿Qué servicios va a incluir esta visita?" : "Which services does this visit include?")}
+              </div>
+            </div>
+
+            {dropPrompt.step === "crew" ? (
+              <div style={{ padding: "10px 20px", display: "flex", flexDirection: "column", gap: 6, maxHeight: 260, overflowY: "auto" }}>
+                {(crews || []).map(cr => {
+                  const selected = dropPrompt.crewId === cr.id;
+                  return (
+                    <label key={cr.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 8, border: "1px solid " + (selected ? cr.color + "60" : v.border), background: selected ? cr.color + "12" : "transparent", cursor: "pointer" }}>
+                      <input type="radio" name="dropCrew" checked={selected} onChange={() => setDropPrompt(p => ({ ...p, crewId: cr.id }))} style={{ width: 15, height: 15, accentColor: cr.color || "#16A34A" }}/>
+                      <span style={{ width: 8, height: 8, borderRadius: "50%", background: cr.color || "#16A34A" }}/>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: v.text, flex: 1 }}>{cr.name}</span>
+                    </label>
+                  );
+                })}
+                {(!crews || crews.length === 0) && (
+                  <p style={{ fontSize: 12, color: v.textTer }}>{lang === "es" ? "No tienes cuadrillas creadas todavía." : "You haven't created any crews yet."}</p>
+                )}
+              </div>
+            ) : (
+              <div style={{ padding: "10px 20px", display: "flex", flexDirection: "column", gap: 6, maxHeight: 260, overflowY: "auto" }}>
+                {(dropPrompt.client.services || []).map(s => {
+                  const sid = typeof s === "string" ? s : s.serviceId;
+                  const svc = services.find(x => x.id === sid);
+                  if (!svc) return null;
+                  const checked = dropPrompt.selected.includes(sid);
+                  return (
+                    <label key={sid} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 8, border: "1px solid " + (checked ? "#16A34A40" : v.border), background: checked ? (dark ? "rgba(22,163,74,0.08)" : "#F0FDF4") : "transparent", cursor: "pointer" }}>
+                      <input type="checkbox" checked={checked} onChange={() => {
+                        setDropPrompt(p => ({ ...p, selected: checked ? p.selected.filter(x => x !== sid) : [...p.selected, sid] }));
+                      }} style={{ width: 16, height: 16, accentColor: "#16A34A" }}/>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: v.text, flex: 1 }}>{lang === "es" && svc.nameEs ? svc.nameEs : svc.name}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+
+            <div style={{ padding: "14px 20px 18px", display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <button onClick={() => setDropPrompt(null)} style={{ padding: "9px 16px", borderRadius: 8, border: "1px solid " + v.border, background: "transparent", color: v.text, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                {lang === "es" ? "Cancelar" : "Cancel"}
+              </button>
+              {dropPrompt.step === "crew" ? (
+                <button disabled={!dropPrompt.crewId} onClick={() => {
+                  const allServiceIds = (dropPrompt.client.services || []).map(s => typeof s === "string" ? s : s.serviceId);
+                  if (allServiceIds.length > 1) {
+                    setDropPrompt(p => ({ ...p, step: "services" }));
+                  } else {
+                    createJobFromDrop(dropPrompt.client, dropPrompt.start, dropPrompt.crewId, allServiceIds);
+                    setDropPrompt(null);
+                  }
+                }} style={{ padding: "9px 16px", borderRadius: 8, border: "none", background: !dropPrompt.crewId ? "#D1D5DB" : "linear-gradient(135deg, #16A34A, #22C55E)", color: !dropPrompt.crewId ? "#9CA3AF" : "#fff", fontSize: 12, fontWeight: 600, cursor: !dropPrompt.crewId ? "not-allowed" : "pointer" }}>
+                  {lang === "es" ? "Continuar" : "Continue"}
+                </button>
+              ) : (
+                <button disabled={dropPrompt.selected.length === 0} onClick={() => {
+                  createJobFromDrop(dropPrompt.client, dropPrompt.start, dropPrompt.crewId, dropPrompt.selected);
+                  setDropPrompt(null);
+                }} style={{ padding: "9px 16px", borderRadius: 8, border: "none", background: dropPrompt.selected.length === 0 ? "#D1D5DB" : "linear-gradient(135deg, #16A34A, #22C55E)", color: dropPrompt.selected.length === 0 ? "#9CA3AF" : "#fff", fontSize: 12, fontWeight: 600, cursor: dropPrompt.selected.length === 0 ? "not-allowed" : "pointer" }}>
+                  {lang === "es" ? "Agendar" : "Schedule"} {dropPrompt.selected.length > 0 ? `(${dropPrompt.selected.length})` : ""}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Toast */}
       {toast && (
         <div style={{ position:"fixed", bottom:24, right:24, padding:"12px 20px", borderRadius:8,
@@ -1460,7 +1721,33 @@ export default function Scheduling({ dark, v, t, lang }) {
           <span>✓</span> {toast}
         </div>
       )}
-      <style>{`@keyframes schToast2 { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }`}</style>
+      <style>{`@keyframes schToast2 { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+        .rbc-today { background-color: ${dark ? "rgba(22,163,74,0.08)" : "rgba(22,163,74,0.04)"} !important; }
+        .rbc-toolbar button { color: ${v.textSec}; border-color: ${v.border}; }
+        .rbc-toolbar button.rbc-active, .rbc-toolbar button:hover { background: #16A34A15; color: #16A34A; border-color: #16A34A40; }
+        .rbc-off-range-bg { background: ${dark ? "rgba(255,255,255,0.02)" : "#FAFAFA"}; }
+        .rbc-header, .rbc-time-header-content, .rbc-time-content, .rbc-month-view, .rbc-time-view { border-color: ${v.border} !important; }
+        /* Tipografía consistente con el resto de la app (antes usaba la fuente
+           genérica del navegador, que es lo que hacía sentir el grid "soso") */
+        .rbc-time-view, .rbc-header, .rbc-label, .rbc-toolbar { font-family: 'DM Sans', sans-serif; }
+        .rbc-header { color: ${v.text}; font-weight: 700; font-size: 13px; padding: 12px 6px; letter-spacing: 0; border-bottom: 1px solid ${v.border} !important; }
+        .rbc-time-gutter .rbc-label { font-size: 11px; font-weight: 500; color: ${v.textSec}; font-variant-numeric: tabular-nums; }
+        /* Jerarquía de líneas: la de cada hora es visible, la de cada media
+           hora es apenas un susurro — así el ojo agarra el ritmo horario sin
+           que el grid entero se vea como una cuadrícula uniforme y pesada. */
+        .rbc-timeslot-group { min-height: 60px; border-bottom: 1px solid ${v.border} !important; }
+        .rbc-day-slot .rbc-time-slot { border-top: 1px solid ${dark ? "rgba(255,255,255,0.05)" : "rgba(15,23,42,0.045)"} !important; }
+        .rbc-time-gutter .rbc-time-slot { border-top: none !important; }
+        .rbc-day-slot + .rbc-day-slot, .rbc-header + .rbc-header { border-left: 1px solid ${v.border}80 !important; }
+        .rbc-current-time-indicator { background-color: #16A34A; }
+        .rbc-event { box-shadow: none !important; overflow: hidden !important; }
+        .rbc-event-content { overflow: hidden !important; }
+        .rbc-event-label { display: none !important; }
+        /* Reserva siempre el espacio del scrollbar vertical: sin esto, el header
+           y el cuerpo del calendario se desalinean entre el estado "sin jobs"
+           (sin scrollbar) y "con jobs" (con scrollbar). */
+        .rbc-time-content { overflow-y: scroll !important; }
+      `}</style>
     </div>
   );
 }

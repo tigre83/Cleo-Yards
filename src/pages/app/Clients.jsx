@@ -67,7 +67,7 @@ export default function Clients({ dark, v, t, lang }) {
   const [svcTab, setSvcTab] = useState("maintenance");
   const [errors, setErrors] = useState({});
   const [showConfirm, setShowConfirm] = useState(false);
-  const emptyForm = { name: "", email: "", phone: "", areaCode: "", street: "", city: "", state: "", zip: "", paymentMethod: "zelle", zellePhone: "", billingType: "monthly", defaultCrewId: "", clientSince: "", services: [], notes: "" };
+  const emptyForm = { name: "", email: "", phone: "", areaCode: "", street: "", city: "", state: "", zip: "", paymentMethod: "zelle", zellePhone: "", billingType: "monthly", defaultCrewId: "", clientSince: "", agreedValue: 0, services: [], notes: "" };
   const [form, setForm] = useState(emptyForm);
   const pay = payMethods[lang] || payMethods.en;
   const L = (en, es) => lang === "es" ? es : en;
@@ -86,26 +86,33 @@ export default function Clients({ dark, v, t, lang }) {
   }, []);
 
   const openAdd = () => { setEditId(null); setForm(emptyForm); setErrors({}); setSvcTab("maintenance"); setView("form"); };
-  const openEdit = (cl) => { setEditId(cl.id); const parts = (cl.address||"").split(", "); const sz = (parts[2]||"").split(" "); const pp = (cl.phone||"").match(/\((\d{3})\)\s?(.+)/); setForm({ name: cl.name, email: cl.email, phone: pp?pp[2]:cl.phone, areaCode: pp?pp[1]:"", street: parts[0]||"", city: parts[1]||"", state: sz[0]||"", zip: sz[1]||"", paymentMethod: cl.paymentMethod, zellePhone: cl.zellePhone||"", billingType: cl.billingType||"monthly", defaultCrewId: cl.defaultCrewId||"", clientSince: cl.clientSince||"", services: (cl.services||[]).map(s => typeof s === "string" ? { serviceId: s, qty: 1, customPrice: null } : { serviceId: s.serviceId, qty: s.qty || 1, customPrice: s.customPrice ?? null }), notes: cl.notes||"" }); setErrors({}); setSvcTab("maintenance"); setView("form"); };
+  const openEdit = (cl) => { setEditId(cl.id); const parts = (cl.address||"").split(", "); const sz = (parts[2]||"").split(" "); const pp = (cl.phone||"").match(/\((\d{3})\)\s?(.+)/); setForm({ name: cl.name, email: cl.email, phone: pp?pp[2]:cl.phone, areaCode: pp?pp[1]:"", street: parts[0]||"", city: parts[1]||"", state: sz[0]||"", zip: sz[1]||"", paymentMethod: cl.paymentMethod, zellePhone: cl.zellePhone||"", billingType: cl.billingType||"monthly", defaultCrewId: cl.defaultCrewId||"", clientSince: cl.clientSince||"", agreedValue: cl.agreedValue || 0, services: (cl.services||[]).map(s => typeof s === "string" ? { serviceId: s, qty: 1 } : { serviceId: s.serviceId, qty: s.qty || 1 }), notes: cl.notes||"" }); setErrors({}); setSvcTab("maintenance"); setView("form"); };
   const validate = () => { const e={}; if(!form.name.trim())e.name=1; if(!form.email.trim()||!isValidEmail(form.email))e.email=1; if(!form.phone.trim()||!form.areaCode)e.phone=1; if(!form.street.trim())e.street=1; if(!form.city)e.city=1; if(!form.state)e.state=1; if(!form.zip.trim())e.zip=1; setErrors(e); return !Object.keys(e).length; };
-  const handleSave = () => { if(!validate()) return; const c={ name:capitalize(form.name), email:form.email, phone:"("+form.areaCode+") "+form.phone, address:[form.street,form.city,form.state+" "+form.zip].filter(Boolean).join(", "), paymentMethod:form.paymentMethod, zellePhone:form.zellePhone, billingType:form.billingType, defaultCrewId:form.defaultCrewId, clientSince:form.clientSince, services:form.services, notes:form.notes }; if(editId){ updateClient(editId,c); setToast(L("Client updated","Cliente actualizado")); } else { addClient(c); setToast(L("Client created","Cliente creado")); } setTimeout(() => setToast(null), 3000); setView("list"); };
+  const handleSave = async () => {
+    if(!validate()) return;
+    const c={ name:capitalize(form.name), email:form.email, phone:"("+form.areaCode+") "+form.phone, address:[form.street,form.city,form.state+" "+form.zip].filter(Boolean).join(", "), paymentMethod:form.paymentMethod, zellePhone:form.zellePhone, billingType:form.billingType, defaultCrewId:form.defaultCrewId, clientSince:form.clientSince, agreedValue:form.agreedValue||0, services:form.services, notes:form.notes };
+    if(editId){
+      const ok = await updateClient(editId,c);
+      if (ok) { setToast(L("Client updated","Cliente actualizado")); setView("list"); }
+      else { setToast(L("Couldn't save — check your connection and try again","No se pudo guardar — revisa tu conexión e intenta de nuevo")); }
+    } else {
+      const created = await addClient(c);
+      if (created) { setToast(L("Client created","Cliente creado")); setView("list"); }
+      else { setToast(L("Couldn't save — check your connection and try again","No se pudo guardar — revisa tu conexión e intenta de nuevo")); }
+    }
+    setTimeout(() => setToast(null), 3000);
+  };
   const toggleService = (sid) => setForm(f => {
     const exists = f.services.find(s => (typeof s === "string" ? s : s.serviceId) === sid);
     if (exists) return { ...f, services: f.services.filter(s => (typeof s === "string" ? s : s.serviceId) !== sid) };
-    const svc = services.find(s => s.id === sid);
-    return { ...f, services: [...f.services, { serviceId: sid, qty: 1, customPrice: svc?.price ?? 0 }] };
+    return { ...f, services: [...f.services, { serviceId: sid, qty: 1 }] };
   });
   const updateServiceQty = (sid, qty) => setForm(f => ({
     ...f, services: qty <= 0 
       ? f.services.filter(s => (typeof s === "string" ? s : s.serviceId) !== sid)
       : f.services.map(s => (typeof s === "string" ? s : s.serviceId) === sid ? { ...(typeof s === "object" ? s : {}), serviceId: sid, qty } : s)
   }));
-  // FASE 2: precio propio por cliente-servicio (elm: "ninguno tiene el mismo precio")
-  const updateServicePrice = (sid, price) => setForm(f => ({
-    ...f, services: f.services.map(s => (typeof s === "string" ? s : s.serviceId) === sid ? { ...(typeof s === "object" ? s : { serviceId: sid, qty: 1 }), customPrice: price } : s)
-  }));
   const getSvcQty = (sid) => { const s = form.services.find(x => (typeof x === "string" ? x : x.serviceId) === sid); if (!s) return 0; return typeof s === "string" ? 1 : (s?.qty || 1); };
-  const getSvcPrice = (sid, fallback) => { const s = form.services.find(x => (typeof x === "string" ? x : x.serviceId) === sid); if (!s || typeof s === "string") return fallback; return s.customPrice != null ? s.customPrice : fallback; };
   const isSvcSelected = (sid) => form.services.some(s => (typeof s === "string" ? s : s.serviceId) === sid);
   const toggleStatus = (cl) => updateClient(cl.id, { status: cl.status==="active"?"inactive":"active" });
 
@@ -235,16 +242,27 @@ export default function Clients({ dark, v, t, lang }) {
 
         {/* RIGHT */}
         <div style={{ flex:"0 0 340px", background:v.cardBg, border:"1px solid "+v.border, borderRadius:10, padding:"20px 24px" }}>
-          {SH(L("Assigned Services","Servicios Asignados") + " *")}
+          {SH(L("Agreed Monthly Value","Valor Mensual Acordado") + " *")}
+          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:18, padding:"10px 12px", borderRadius:8, border:"1px solid "+v.border, background:dark?"rgba(22,163,74,0.06)":"#F0FDF4" }}>
+            <span style={{ fontSize:16, fontWeight:800, color:"#16A34A" }}>$</span>
+            <input type="number" min="0" step="0.01" value={form.agreedValue}
+              onChange={e => setForm(f => ({ ...f, agreedValue: +e.target.value || 0 }))}
+              style={{ flex:1, border:"none", outline:"none", background:"transparent", fontSize:20, fontWeight:800, color:"#16A34A", fontFamily:"'Syne'" }}/>
+            <span style={{ fontSize:11, color:v.textSec }}>{L("/mo","/mes")}</span>
+          </div>
+
+          {SH(L("Services Included","Servicios Incluidos") + " *")}
+          <p style={{ fontSize:10, color:v.textTer, marginTop:-6, marginBottom:10 }}>
+            {L("Just a checklist — no per-service price, the client is billed the value above.", "Es solo un checklist — sin precio por servicio, se factura el valor de arriba.")}
+          </p>
           <div style={{ display:"flex", gap:6, marginBottom:12 }}>
             {Object.entries(categories).map(([key,cat]) => { const cnt=services.filter(s=>s.active&&s.category===key).length; const sel=services.filter(s=>s.active&&s.category===key&&isSvcSelected(s.id)).length; return <button key={key} onClick={() => setSvcTab(key)} style={{ flex:1, padding:"6px 4px", borderRadius:6, fontSize:9, whiteSpace:"nowrap", fontWeight:600, border:"1px solid "+(svcTab===key?cat.color:v.border), background:svcTab===key?cat.color+(dark?"15":"08"):"transparent", color:svcTab===key?cat.color:v.textSec, cursor:"pointer", textAlign:"center" }}>{cat[lang]} ({cnt}){sel>0&&<span style={{ marginLeft:2, fontSize:7, padding:"0 4px", borderRadius:4, background:cat.color, color:"#fff" }}>{sel}</span>}</button>; })}
           </div>
           <div style={{ display:"flex", flexDirection:"column", gap:4, maxHeight:220, overflowY:"auto", marginBottom:10 }}>
-            {services.filter(s=>s.active&&s.category===svcTab).map(svc => { const qty=getSvcQty(svc.id); const sel=qty>0; const price=getSvcPrice(svc.id, svc.price); const cc=categories[svc.category]?.color||"#16A34A"; return <div key={svc.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 10px", borderRadius:6, background:sel?cc+"08":"transparent", border:"1px solid "+(sel?cc+"30":v.border+"50"), transition:"all 0.1s" }}><span style={{ fontSize:11, fontWeight:sel?600:400, color:sel?v.text:v.textSec, flex:1 }}>{lang==="es"?svc.nameEs:svc.name}</span><div style={{ display:"flex", alignItems:"center", gap:3 }}><button onClick={()=>{if(qty>0)updateServiceQty(svc.id,qty-1);}} style={{ width:22, height:22, borderRadius:4, border:"1px solid "+(qty>0?cc+"40":v.border), background:qty>0?cc+"08":"transparent", cursor:qty>0?"pointer":"default", display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, color:qty>0?cc:v.textSec, fontWeight:700, opacity:qty>0?1:0.4 }}>−</button><span style={{ fontSize:12, fontWeight:700, color:sel?cc:v.textSec, minWidth:22, textAlign:"center" }}>{qty}</span><button onClick={()=>{if(qty===0){toggleService(svc.id);}else{updateServiceQty(svc.id,qty+1);}}} style={{ width:22, height:22, borderRadius:4, border:"1px solid "+(cc+"40"), background:cc+"08", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, color:cc, fontWeight:700 }}>+</button></div>{sel ? <div style={{ display:"flex", alignItems:"center", gap:2, minWidth:72, justifyContent:"flex-end" }}><span style={{ fontSize:11, color:cc, fontWeight:700 }}>$</span><input type="number" min="0" step="0.01" value={price} onClick={e=>e.stopPropagation()} onChange={e=>updateServicePrice(svc.id, +e.target.value || 0)} style={{ width:56, padding:"3px 5px", borderRadius:4, border:"1px solid "+cc+"40", background:"transparent", color:cc, fontSize:12, fontWeight:700, textAlign:"right", outline:"none" }}/></div> : <span style={{ fontSize:11, fontWeight:500, color:v.textTer, minWidth:72, textAlign:"right" }}>${svc.price} <span style={{ fontSize:8, opacity:0.7 }}>{L("sugg.","sug.")}</span></span>}</div>; })}
+            {services.filter(s=>s.active&&s.category===svcTab).map(svc => { const qty=getSvcQty(svc.id); const sel=qty>0; const cc=categories[svc.category]?.color||"#16A34A"; return <div key={svc.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 10px", borderRadius:6, background:sel?cc+"08":"transparent", border:"1px solid "+(sel?cc+"30":v.border+"50"), transition:"all 0.1s" }}><span style={{ fontSize:11, fontWeight:sel?600:400, color:sel?v.text:v.textSec, flex:1 }}>{lang==="es"?svc.nameEs:svc.name}</span><div style={{ display:"flex", alignItems:"center", gap:3 }}><button onClick={()=>{if(qty>0)updateServiceQty(svc.id,qty-1);}} style={{ width:22, height:22, borderRadius:4, border:"1px solid "+(qty>0?cc+"40":v.border), background:qty>0?cc+"08":"transparent", cursor:qty>0?"pointer":"default", display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, color:qty>0?cc:v.textSec, fontWeight:700, opacity:qty>0?1:0.4 }}>−</button><span style={{ fontSize:12, fontWeight:700, color:sel?cc:v.textSec, minWidth:22, textAlign:"center" }}>{qty}</span><button onClick={()=>{if(qty===0){toggleService(svc.id);}else{updateServiceQty(svc.id,qty+1);}}} style={{ width:22, height:22, borderRadius:4, border:"1px solid "+(cc+"40"), background:cc+"08", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, color:cc, fontWeight:700 }}>+</button></div></div>; })}
           </div>
           {form.services.length > 0 && <div style={{ borderTop:"1px solid "+v.border, paddingTop:10 }}>
             <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:8 }}>{form.services.map(cs => { const sid = typeof cs === "string" ? cs : cs.serviceId; const qty = typeof cs === "string" ? 1 : (cs.qty||1); const svc=services.find(s=>s.id===sid); if(!svc) return null; const cc=categories[svc.category]?.color||"#16A34A"; return <span key={sid} onClick={() => toggleService(sid)} style={{ fontSize:9, fontWeight:600, padding:"3px 7px", borderRadius:4, background:cc+"12", color:cc, cursor:"pointer", display:"flex", alignItems:"center", gap:3 }}>{lang==="es"?svc.nameEs:svc.name} ×{qty} <span style={{ opacity:0.4, fontSize:11 }}>×</span></span>; })}</div>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 10px", borderRadius:6, background:dark?"rgba(22,163,74,0.06)":"#F0FDF4" }}><span style={{ fontSize:10, color:v.textSec }}>{form.services.length} {L("services","servicios")}</span><span style={{ fontSize:14, fontWeight:800, color:"#16A34A", fontFamily:"'Syne'" }}>${form.services.reduce((s,cs) => { const sid=typeof cs==="string"?cs:cs.serviceId; const qty=typeof cs==="string"?1:(cs.qty||1); const svc=services.find(x=>x.id===sid); const price=typeof cs==="object"&&cs.customPrice!=null?cs.customPrice:(svc?.price||0); return s+price*qty; },0)}{L("/mo","/mes")}</span></div>
           </div>}
           {errors.services && <p style={{ fontSize:10, color:"#EF4444", marginTop:6 }}>{L("Select at least one","Selecciona al menos uno")}</p>}
         </div>
@@ -299,9 +317,9 @@ export default function Clients({ dark, v, t, lang }) {
               <div style={{ padding:"8px 12px", borderRadius:6, background:dark?"rgba(255,255,255,0.02)":v.surface }}>
                 <span style={{ fontSize:11, color:v.textTer, display:"block", marginBottom:6 }}>{L("Services","Servicios")} ({form.services.length})</span>
                 <div style={{ display:"flex", gap:4, flexWrap:"wrap" }}>
-                  {form.services.map(cs => { const sid=typeof cs==="string"?cs:cs.serviceId; const qty=typeof cs==="string"?1:(cs.qty||1); const svc = services.find(s=>s.id===sid); if(!svc) return null; const price=typeof cs==="object"&&cs.customPrice!=null?cs.customPrice:svc.price; const cc = categories[svc.category]?.color||"#16A34A"; return <span key={sid} style={{ fontSize:9, fontWeight:600, padding:"2px 6px", borderRadius:4, background:cc+"12", color:cc }}>{lang==="es"?svc.nameEs:svc.name} ×{qty} ${price*qty}</span>; })}
+                  {form.services.map(cs => { const sid=typeof cs==="string"?cs:cs.serviceId; const qty=typeof cs==="string"?1:(cs.qty||1); const svc = services.find(s=>s.id===sid); if(!svc) return null; const cc = categories[svc.category]?.color||"#16A34A"; return <span key={sid} style={{ fontSize:9, fontWeight:600, padding:"2px 6px", borderRadius:4, background:cc+"12", color:cc }}>{lang==="es"?svc.nameEs:svc.name}{qty>1?" ×"+qty:""}</span>; })}
                 </div>
-                <p style={{ fontSize:12, fontWeight:700, color:"#16A34A", marginTop:6, textAlign:"right" }}>Total: ${form.services.reduce((s,cs) => { const sid=typeof cs==="string"?cs:cs.serviceId; const qty=typeof cs==="string"?1:(cs.qty||1); const svc=services.find(x=>x.id===sid); const price=typeof cs==="object"&&cs.customPrice!=null?cs.customPrice:(svc?.price||0); return s+price*qty; },0)}{L("/mo","/mes")}</p>
+                <p style={{ fontSize:12, fontWeight:700, color:"#16A34A", marginTop:6, textAlign:"right" }}>{L("Agreed value","Valor acordado")}: ${form.agreedValue||0}{L("/mo","/mes")}</p>
               </div>
               {form.notes && <div style={{ display:"flex", justifyContent:"space-between", padding:"8px 12px", borderRadius:6, background:dark?"rgba(255,255,255,0.02)":v.surface }}>
                 <span style={{ fontSize:11, color:v.textTer }}>{L("Notes","Notas")}</span>
