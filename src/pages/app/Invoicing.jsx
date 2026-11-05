@@ -638,8 +638,17 @@ function InvoiceForm({ onCancel, onSave, clients, services, editInvoice, d, lang
                         setField("clientId", cl.id); 
                         setClientSearch(cl.name); 
                         setShowClientDrop(false);
-                        // Auto-load client services as line items
-                        if (cl.services && cl.services.length > 0) {
+                        // FASE 2.5: si el cliente tiene valor acordado, la factura es UNA línea
+                        // con ese monto y los servicios como descripción (no suma de precios de catálogo)
+                        if (cl.agreedValue > 0) {
+                          const names = (cl.services || []).map(cs => {
+                            const sid = typeof cs === "string" ? cs : cs.serviceId;
+                            const svc = (services || []).find(s => s.id === sid);
+                            return svc ? (lang === "es" && svc.nameEs ? svc.nameEs : svc.name) : null;
+                          }).filter(Boolean).join(", ");
+                          setForm(p => ({ ...p, clientId: cl.id, items: [{ id: Date.now(), serviceId: "", name: names || (lang === "es" ? "Servicio mensual" : "Monthly service"), qty: 1, price: cl.agreedValue }] }));
+                        } else if (cl.services && cl.services.length > 0) {
+                        // Sin valor acordado: carga los servicios con precio de catálogo (comportamiento anterior)
                           const svcItems = cl.services.map(cs => {
                             const sid = typeof cs === "string" ? cs : cs.serviceId;
                             const qty = typeof cs === "string" ? 1 : (cs.qty || 1);
@@ -1150,7 +1159,7 @@ function InvoiceDetail({ invoice, onBack, onEdit, clients, d, lang, companyProfi
    MAIN EXPORT
    ═════════════════════════════════════════════════════════════ */
 export default function Invoicing({ dark, v, t, lang }) {
-  const { invoices, clients, services, addInvoice, updateInvoice, companyProfile } = useData();
+  const { invoices, clients, services, addInvoice, updateInvoice, sendInvoiceEmail, companyProfile } = useData();
   const d = t.inv;
 
   const [view, setView] = useState("list");
@@ -1159,7 +1168,7 @@ export default function Invoicing({ dark, v, t, lang }) {
 
   const showToast = (msg, type = "success") => {
     setToast({ msg, type });
-    setTimeout(() => setToast(null), 3000);
+    setTimeout(() => setToast(null), type === "success" ? 3000 : 7000);
   };
 
   const handleNew = () => { setSelected(null); setView("create"); };
@@ -1167,17 +1176,35 @@ export default function Invoicing({ dark, v, t, lang }) {
   const handleEdit = (inv) => { setSelected(inv); setView("edit"); };
   const handleBack = () => { setView("list"); setSelected(null); };
 
-  const handleSave = (invoiceData) => {
-    if (view === "edit" && selected?.id) {
-      if (updateInvoice) updateInvoice(selected.id, invoiceData);
-      showToast(lang === "es" ? "Factura actualizada" : "Invoice updated");
+  // Solo muestra "guardado" si la base de datos de verdad lo guardó; si falla,
+  // te deja en el formulario con tu trabajo intacto y un aviso rojo.
+  const handleSave = async (invoiceData) => {
+    const L = (en, es) => lang === "es" ? es : en;
+    const today = new Date().toISOString().split("T")[0];
+    const isEdit = view === "edit" && selected?.id;
+    const sending = invoiceData.status === "sent";
+    const failMsg = L("Couldn't save the invoice. Nothing was lost — try again.", "No se pudo guardar la factura. No perdiste nada — intenta de nuevo.");
+
+    let saved;
+    if (isEdit) {
+      const payload = sending && !selected.sentDate ? { ...invoiceData, sentDate: today } : invoiceData;
+      const ok = updateInvoice ? await updateInvoice(selected.id, payload) : false;
+      if (!ok) { showToast(failMsg, "error"); return; }
+      saved = { ...selected, ...payload };
     } else {
-      if (addInvoice) addInvoice({ ...invoiceData, id: invoiceData.id || Date.now().toString() });
-      showToast(
-        invoiceData.status === "sent"
-          ? (lang === "es" ? "Factura creada y enviada" : "Invoice created & sent")
-          : (lang === "es" ? "Borrador guardado" : "Draft saved")
-      );
+      saved = addInvoice ? await addInvoice(sending ? { ...invoiceData, sentDate: today } : invoiceData) : null;
+      if (!saved) { showToast(failMsg, "error"); return; }
+    }
+
+    // "Guardar y enviar" tiene que enviar el correo de verdad (solo si antes era borrador o nueva)
+    if (sending && (!isEdit || selected.status === "draft")) {
+      const emailed = sendInvoiceEmail ? await sendInvoiceEmail(saved) : false;
+      showToast(emailed
+        ? L("Invoice created & emailed", "Factura creada y enviada por correo")
+        : L("Invoice saved, but the email was NOT sent (does the client have an email?)", "Factura guardada, pero el correo NO se envió (¿el cliente tiene email?)"),
+        emailed ? "success" : "error");
+    } else {
+      showToast(isEdit ? L("Invoice updated", "Factura actualizada") : L("Draft saved", "Borrador guardado"));
     }
     setView("list");
     setSelected(null);

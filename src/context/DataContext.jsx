@@ -498,15 +498,31 @@ export function DataProvider({ children }) {
     return `INV-${year}-${String(next).padStart(3, "0")}`;
   };
 
+  // Reintenta quitando las columnas que la base de datos no tenga (cuando el
+  // esquema de Supabase va más atrás que el código). Así un guardado no se
+  // pierde por una columna opcional; el aviso queda en la consola.
+  const withColumnFallback = async (payload, run) => {
+    const p = { ...payload };
+    let res;
+    for (let i = 0; i < 8; i++) {
+      res = await run(p);
+      const m = res.error && /Could not find the '([^']+)' column/.exec(res.error.message || "");
+      if (m && m[1] in p) { console.warn("Columna inexistente en la base, se omite:", m[1]); delete p[m[1]]; continue; }
+      break;
+    }
+    return res;
+  };
+  const emptyToNull = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, v === "" ? null : v]));
+
   const addInvoice = async (invoice) => {
-    const { items, ...invData } = invoice;
-    const invNumber = invData.invoiceNumber || invData.id || getNextInvoiceNumber();
-    
-    const { data } = await supabase.from("invoices").insert({
-      ...toSnake(invData),
-      invoice_number: invNumber,
-      company_id: COMPANY_ID,
-    }).select().single();
+    const { items, ...rest } = invoice;
+    // El id lo genera la base (UUID); los impuestos ya no existen (FASE 1).
+    const { id: _id, tax: _t, taxable: _tb, taxRate: _tr, taxAmount: _ta, ...invData } = rest;
+    const invNumber = invData.invoiceNumber || getNextInvoiceNumber();
+
+    const payload = { ...emptyToNull(toSnake(invData)), invoice_number: invNumber, company_id: COMPANY_ID };
+    const { data, error } = await withColumnFallback(payload, (p) => supabase.from("invoices").insert(p).select().single());
+    if (error) { console.error("addInvoice failed:", error); return null; }
 
     if (data) {
       // Insert items
@@ -528,9 +544,15 @@ export function DataProvider({ children }) {
   };
 
   const updateInvoice = async (id, updates) => {
+    const prevInvoices = invoices;
     setInvoices(p => p.map(i => i.id === id ? { ...i, ...updates } : i));
-    const { items, createdAt, id: _, companyId, ...dbData } = updates;
-    await supabase.from("invoices").update(toSnake(dbData)).eq("id", id);
+    const { items, createdAt, id: _, companyId, tax: _t, taxable: _tb, taxRate: _tr, taxAmount: _ta, ...dbData } = updates;
+    const { error } = await withColumnFallback(emptyToNull(toSnake(dbData)), (p) => supabase.from("invoices").update(p).eq("id", id));
+    if (error) {
+      console.error("updateInvoice failed:", error);
+      setInvoices(prevInvoices); // revierte el cambio optimista
+      return false;
+    }
 
     if (items) {
       await supabase.from("invoice_items").delete().eq("invoice_id", id);
@@ -542,6 +564,24 @@ export function DataProvider({ children }) {
         price: item.price,
       }));
       if (rows.length) await supabase.from("invoice_items").insert(rows);
+    }
+    return true;
+  };
+
+  // Envía el correo de una factura ya guardada. Devuelve true/false.
+  const sendInvoiceEmail = async (inv) => {
+    const client = clients.find(c => c.id === inv.clientId);
+    if (!client?.email) return false;
+    try {
+      const res = await fetch(`${EMAIL_API}/invoice`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ company: companyProfile, client, invoice: inv, items: inv.items || [] }),
+      });
+      return res.ok;
+    } catch (err) {
+      console.error("Email send error:", err);
+      return false;
     }
   };
 
@@ -643,7 +683,7 @@ export function DataProvider({ children }) {
       completeJob, cancelJob, startJob, reassignJob, getNextJobId, generateMonthlyJobs, toggleServiceComplete,
       addService, updateService,
       addClient, updateClient,
-      addInvoice, updateInvoice, sendInvoice, markPaid,
+      addInvoice, updateInvoice, sendInvoice, sendInvoiceEmail, markPaid,
       getNextInvoiceNumber, getInvoicesByClient,
       addNotification, getServiceById, getClientServices, getClientMonthlyTotal
     }}>
